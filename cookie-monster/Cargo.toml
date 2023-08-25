@@ -1,0 +1,11 @@
+[package]
+name = "cookie-monster"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+cookie = "^0.16.1"
+gio = "^0.16.0"
+glib = "^0.16.0"
+gtk = "^0.16.0"
+webkit2gtk = { version = "1.1.0", features = ["v2_20"] }
