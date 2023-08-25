@@ -208,6 +208,7 @@ name = "lib-bb"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "regex",
  "serde",
  "serde_json",
  "soup",

@@ -1,4 +1,5 @@
 use anyhow::anyhow;
+use regex::Regex;
 use soup::prelude::*;
 
 // https://learn.uq.edu.au/webapps/blackboard/execute/courseMain?course_id={course_id}
@@ -6,8 +7,24 @@ use soup::prelude::*;
 
 #[derive(Debug)]
 struct SidebarEntry {
-    link: String,
+    link: SidebarLink,
     name: String,
+}
+
+#[derive(Debug)]
+enum SidebarLink {
+    Directory(String),
+    Link(String),
+}
+
+impl SidebarLink {
+    fn from_url(url: String) -> Self {
+        let re = Regex::new(r"/webapps/blackboard/content/listContent.jsp\?course_id=.*&content_id=.*").unwrap();
+        match re.is_match(&url) {
+            true => SidebarLink::Directory(url),
+            false => SidebarLink::Link(url),
+        }
+    }
 }
 
 #[allow(unreachable_code)]
@@ -25,9 +42,9 @@ fn get_course_sidebar(_course_id: String) -> anyhow::Result<()> {
         .tag("a")
         .find_all()
         .map(|a| {
-            let link = a
+            let link = SidebarLink::from_url(a
                 .get("href")
-                .ok_or(anyhow!("Some sidebar <a> tag didnt have a href?!?!?!"))?;
+                .ok_or(anyhow!("Some sidebar <a> tag didnt have a href?!?!?!"))?);
             let name = a.text();
 
             Ok(SidebarEntry { link, name })
