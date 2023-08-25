@@ -11,6 +11,7 @@
 #![allow(dead_code)]
 
 pub mod client;
+mod course_main_data;
 mod ultra_data;
 
 #[derive(Clone)]
