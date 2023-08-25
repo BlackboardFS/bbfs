@@ -10,6 +10,8 @@
 
 #![allow(dead_code)]
 
+use serde::Deserialize;
+
 pub mod client;
 mod course_main_data;
 mod http;
@@ -33,6 +35,14 @@ pub struct CourseItem {
 pub enum CourseItemType {
     Link,
     File,
+}
+
+#[derive(Clone, Deserialize)]
+pub struct User {
+    pub id: String,
+    pub givenName: String,
+    pub familyName: String,
+    pub userName: String,
 }
 
 // Sidebar entry

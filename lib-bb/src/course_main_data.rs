@@ -19,7 +19,9 @@ enum SidebarLink {
 
 impl SidebarLink {
     fn from_url(url: String) -> Self {
-        let re = Regex::new(r"/webapps/blackboard/content/listContent.jsp\?course_id=.*&content_id=.*").unwrap();
+        let re =
+            Regex::new(r"/webapps/blackboard/content/listContent.jsp\?course_id=.*&content_id=.*")
+                .unwrap();
         match re.is_match(&url) {
             true => SidebarLink::Directory(url),
             false => SidebarLink::Link(url),
@@ -42,9 +44,10 @@ fn get_course_sidebar(_course_id: String) -> anyhow::Result<()> {
         .tag("a")
         .find_all()
         .map(|a| {
-            let link = SidebarLink::from_url(a
-                .get("href")
-                .ok_or(anyhow!("Some sidebar <a> tag didnt have a href?!?!?!"))?);
+            let link = SidebarLink::from_url(
+                a.get("href")
+                    .ok_or(anyhow!("Some sidebar <a> tag didnt have a href?!?!?!"))?,
+            );
             let name = a.text();
 
             Ok(SidebarEntry { link, name })
