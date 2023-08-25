@@ -3,4 +3,6 @@ resolver = "2"
 
 members = [
     "lib-bb",
+    "fs",
+    "cli"
 ]
