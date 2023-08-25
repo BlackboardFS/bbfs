@@ -10,36 +10,44 @@
 
 #![allow(dead_code)]
 
+pub mod client;
 mod ultra_data;
-mod mock_bb_interface;
 
 pub struct Course {
-    display_id: String,
-    display_name: String,
-    // The weird id that looks something like "_172757_1"
-    id: String,
-    tabs: Vec<TabEntry>,
-    // other stuff
+    pub short_name: String,
+    pub full_name: String,
+    pub id: String,
+}
+
+pub struct CourseItem {
+    pub name: String,
+    pub url: String,
+    pub ty: CourseItemType,
+}
+
+pub enum CourseItemType {
+    Link,
+    File,
 }
 
 // Sidebar entry
-enum TabEntry {
-    Link(String),
-    Directory(Vec<FileEntry>),
-}
+// enum TabEntry {
+//     Link(String),
+//     Directory(Vec<FileEntry>),
+// }
 
 // Content under a directory
 // i have no idea how these data structures are formatted
 // blackboard is such a mess
-enum FileEntry {
-    Directory(Vec<FileEntry>),
-    File {
-        title: String,
-        link: String,
-        attachments: Vec<()>,
-        content_id: String,
-        course_id: String,
-        // https://learn.uq.edu.au/webapps/blackboard/execute/content/file?cmd=view&content_id={content_id}&course_id={course_id}
-        // is the url of the file
-    },
-}
+// enum FileEntry {
+//     Directory(Vec<FileEntry>),
+//     File {
+//         title: String,
+//         link: String,
+//         attachments: Vec<()>,
+//         content_id: String,
+//         course_id: String,
+//         // https://learn.uq.edu.au/webapps/blackboard/execute/content/file?cmd=view&content_id={content_id}&course_id={course_id}
+//         // is the url of the file
+//     },
+// }

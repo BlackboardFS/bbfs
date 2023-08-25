@@ -1,9 +1,13 @@
 use fuser::{
     FileAttr, FileType, Filesystem, ReplyAttr, ReplyData, ReplyDirectory, ReplyEntry, Request,
 };
+use lib_bb::Course;
 use libc::ENOENT;
+use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::time::{Duration, UNIX_EPOCH};
+
+use lib_bb::client::{BBClient, BBMockClient};
 
 // TODO: Figure out the best TTL (if any)
 const TTL: Duration = Duration::from_secs(1);
@@ -47,34 +51,41 @@ struct Inode {
 }
 
 pub struct BBFS {
-    files: Vec<Inode>,
+    client: BBMockClient,
+    next_free_inode: u64,
+    courses: HashMap<u64, Course>,
 }
 
 impl BBFS {
     pub fn new() -> BBFS {
-        BBFS {
-            files: vec![
-                Inode {
-                    inode: 2,
-                    filename: "hello.txt".into(),
-                    contents: "Hello, world!".into(),
-                },
-                Inode {
-                    inode: 3,
-                    filename: "foobar.txt".into(),
-                    contents: "foo bar baz".into(),
-                },
-                Inode {
-                    inode: 4,
-                    filename: "joke.txt".into(),
-                    contents: "Why did the chicken cro... (upgrade to premium)".into(),
-                },
-            ],
+        let mut bbfs = BBFS {
+            client: BBMockClient,
+            next_free_inode: 2,
+            courses: HashMap::new(),
+        };
+        bbfs.populate_courses();
+        bbfs
+    }
+
+    fn get_free_inode(&mut self) -> u64 {
+        let inode = self.next_free_inode;
+        self.next_free_inode += 1;
+        inode
+    }
+
+    fn populate_courses(&mut self) {
+        for course in self.client.get_courses().into_iter() {
+            let inode = self.get_free_inode();
+            self.courses.insert(inode, course);
         }
     }
 
-    fn file(&self, inode: u64) -> Option<&Inode> {
-        self.files.iter().find(|x| x.inode == inode)
+    fn course(&self, inode: u64) -> Option<&Course> {
+        self.courses.get(&inode)
+    }
+
+    fn course_dir_name(course: &Course) -> String {
+        course.short_name.clone()
     }
 }
 
@@ -83,9 +94,9 @@ impl Filesystem for BBFS {
         println!("lookup");
         if parent == 1 {
             let name = name.to_str().unwrap();
-            for file in self.files.iter() {
-                if file.filename == name {
-                    reply.entry(&TTL, &fileattr(file.inode, file.contents.len() as u64), 0);
+            for (inode, course) in self.courses.iter() {
+                if name == BBFS::course_dir_name(course) {
+                    reply.entry(&TTL, &dirattr(*inode), 0);
                     return;
                 }
             }
@@ -100,8 +111,8 @@ impl Filesystem for BBFS {
         match ino {
             1 => reply.attr(&TTL, &dirattr(1)),
             _ => {
-                if let Some(file) = self.file(ino) {
-                    reply.attr(&TTL, &fileattr(file.inode, file.contents.len() as u64));
+                if let Some(_) = self.course(ino) {
+                    reply.attr(&TTL, &dirattr(ino));
                 } else {
                     reply.error(ENOENT);
                 }
@@ -122,11 +133,9 @@ impl Filesystem for BBFS {
     ) {
         println!("read(ino={ino}, offset={offset})");
 
-        if let Some(file) = self.file(ino) {
-            reply.data(&file.contents.as_bytes()[offset as usize..]);
-        } else {
-            reply.error(ENOENT);
-        }
+        // reply.data(&file.contents.as_bytes()[offset as usize..]);
+
+        reply.error(ENOENT);
     }
 
     fn readdir(
@@ -149,12 +158,11 @@ impl Filesystem for BBFS {
             (1, FileType::Directory, "..".into()),
         ];
 
-        for file in self.files.iter() {
-            entries.push((file.inode, FileType::RegularFile, file.filename.clone()))
+        for (inode, course) in self.courses.iter() {
+            entries.push((*inode, FileType::RegularFile, BBFS::course_dir_name(course)))
         }
 
         for (i, entry) in entries.into_iter().enumerate().skip(offset as usize) {
-            // i + 1 means the index of the next entry
             if reply.add(entry.0, (i + 1) as i64, entry.1, entry.2) {
                 break;
             }
