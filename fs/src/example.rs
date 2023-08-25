@@ -7,5 +7,5 @@ use std::path::Path;
 fn main() {
     let path = "./tmp";
     let mountpoint = Path::new(path);
-    fuser::mount2(BBFS, &mountpoint, &[MountOption::AutoUnmount]).unwrap();
+    fuser::mount2(BBFS::new(), &mountpoint, &[MountOption::AutoUnmount]).unwrap();
 }

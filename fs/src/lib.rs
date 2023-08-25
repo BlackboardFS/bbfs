@@ -2,6 +2,7 @@ use fuser::{
     FileAttr, FileType, Filesystem, ReplyAttr, ReplyData, ReplyDirectory, ReplyEntry, Request,
 };
 use libc::ENOENT;
+use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::time::{Duration, UNIX_EPOCH};
 
@@ -40,24 +41,72 @@ fn fileattr(inode: u64, size: u64) -> FileAttr {
     attr(inode, 1, FileType::RegularFile, size, 0o644)
 }
 
-const HELLO_TXT_CONTENT: &str = "Hello World!\n";
+struct Inode {
+    inode: u64,
+    filename: String,
+    contents: String,
+}
 
-pub struct BBFS;
+pub struct BBFS {
+    files: Vec<Inode>,
+}
+
+impl BBFS {
+    pub fn new() -> BBFS {
+        BBFS {
+            files: vec![
+                Inode {
+                    inode: 2,
+                    filename: "hello.txt".into(),
+                    contents: "Hello, world!".into(),
+                },
+                Inode {
+                    inode: 3,
+                    filename: "foobar.txt".into(),
+                    contents: "foo bar baz".into(),
+                },
+                Inode {
+                    inode: 4,
+                    filename: "joke.txt".into(),
+                    contents: "Why did the chicken cro... (upgrade to premium)".into(),
+                },
+            ],
+        }
+    }
+
+    fn file(&self, inode: u64) -> Option<&Inode> {
+        self.files.iter().find(|x| x.inode == inode)
+    }
+}
 
 impl Filesystem for BBFS {
     fn lookup(&mut self, _req: &Request, parent: u64, name: &OsStr, reply: ReplyEntry) {
-        if parent == 1 && name.to_str() == Some("hello.txt") {
-            reply.entry(&TTL, &fileattr(2, HELLO_TXT_CONTENT.len() as u64), 0);
+        println!("lookup");
+        if parent == 1 {
+            let name = name.to_str().unwrap();
+            for file in self.files.iter() {
+                if file.filename == name {
+                    reply.entry(&TTL, &fileattr(file.inode, file.contents.len() as u64), 0);
+                    return;
+                }
+            }
+            reply.error(ENOENT);
         } else {
             reply.error(ENOENT);
         }
     }
 
     fn getattr(&mut self, _req: &Request, ino: u64, reply: ReplyAttr) {
+        println!("getattr(ino={ino})");
         match ino {
             1 => reply.attr(&TTL, &dirattr(1)),
-            2 => reply.attr(&TTL, &fileattr(2, HELLO_TXT_CONTENT.len() as u64)),
-            _ => reply.error(ENOENT),
+            _ => {
+                if let Some(file) = self.file(ino) {
+                    reply.attr(&TTL, &fileattr(file.inode, file.contents.len() as u64));
+                } else {
+                    reply.error(ENOENT);
+                }
+            }
         }
     }
 
@@ -72,8 +121,10 @@ impl Filesystem for BBFS {
         _lock: Option<u64>,
         reply: ReplyData,
     ) {
-        if ino == 2 {
-            reply.data(&HELLO_TXT_CONTENT.as_bytes()[offset as usize..]);
+        println!("read(ino={ino}, offset={offset})");
+
+        if let Some(file) = self.file(ino) {
+            reply.data(&file.contents.as_bytes()[offset as usize..]);
         } else {
             reply.error(ENOENT);
         }
@@ -87,16 +138,21 @@ impl Filesystem for BBFS {
         offset: i64,
         mut reply: ReplyDirectory,
     ) {
+        println!("readdir(ino={ino}, offset={offset})");
+
         if ino != 1 {
             reply.error(ENOENT);
             return;
         }
 
-        let entries = vec![
-            (1, FileType::Directory, "."),
-            (1, FileType::Directory, ".."),
-            (2, FileType::RegularFile, "hello.txt"),
+        let mut entries = vec![
+            (1, FileType::Directory, ".".into()),
+            (1, FileType::Directory, "..".into()),
         ];
+
+        for file in self.files.iter() {
+            entries.push((file.inode, FileType::RegularFile, file.filename.clone()))
+        }
 
         for (i, entry) in entries.into_iter().enumerate().skip(offset as usize) {
             // i + 1 means the index of the next entry
