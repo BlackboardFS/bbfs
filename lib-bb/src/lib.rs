@@ -1,3 +1,21 @@
+// learn.uq.edu.au/learn/api/v1/stream/ultra
+// has information about every file for every course in every directory!
+//
+// sv_streamEntries { // is a list of objects representing each file/directory/announcement/whatever over every course in every directory and subdirectory!
+//  extraAttribs.event_type, // i think has something about what the item type is maybe???
+//  se_timestamp,
+//  se_courseId,
+//  se_itemUri,
+//  itemSpecificData {
+//      title,
+//      courseContentId,
+//      contentDetails {
+//          contentHandler, // maybe this matters???
+//          isFolder,
+//          isBbPage,
+//      }
+//  }
+//
 // process:
 //
 // Authenticate with blackboard
@@ -7,6 +25,8 @@
 //      Get items under sidebar
 
 #![allow(dead_code)]
+
+mod ultra_data;
 
 pub struct Course {
     display_id: String,
