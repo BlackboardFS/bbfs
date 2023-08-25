@@ -13,18 +13,21 @@
 pub mod client;
 mod ultra_data;
 
+#[derive(Clone)]
 pub struct Course {
     pub short_name: String,
     pub full_name: String,
     pub id: String,
 }
 
+#[derive(Clone)]
 pub struct CourseItem {
     pub name: String,
     pub url: String,
     pub ty: CourseItemType,
 }
 
+#[derive(Clone)]
 pub enum CourseItemType {
     Link,
     File,

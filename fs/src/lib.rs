@@ -1,7 +1,7 @@
 use fuser::{
     FileAttr, FileType, Filesystem, ReplyAttr, ReplyData, ReplyDirectory, ReplyEntry, Request,
 };
-use lib_bb::Course;
+use lib_bb::{Course, CourseItem};
 use libc::ENOENT;
 use std::collections::HashMap;
 use std::ffi::OsStr;
@@ -44,16 +44,15 @@ fn fileattr(inode: u64, size: u64) -> FileAttr {
     attr(inode, 1, FileType::RegularFile, size, 0o644)
 }
 
-struct Inode {
-    inode: u64,
-    filename: String,
-    contents: String,
+struct CourseInode {
+    course: Course,
+    items: Option<HashMap<u64, CourseItem>>,
 }
 
 pub struct BBFS {
     client: BBMockClient,
     next_free_inode: u64,
-    courses: HashMap<u64, Course>,
+    courses: HashMap<u64, CourseInode>,
 }
 
 impl BBFS {
@@ -76,12 +75,51 @@ impl BBFS {
     fn populate_courses(&mut self) {
         for course in self.client.get_courses().into_iter() {
             let inode = self.get_free_inode();
-            self.courses.insert(inode, course);
+            self.courses.insert(
+                inode,
+                CourseInode {
+                    course,
+                    items: None,
+                },
+            );
         }
     }
 
-    fn course(&self, inode: u64) -> Option<&Course> {
+    fn course(&self, inode: u64) -> Option<&CourseInode> {
         self.courses.get(&inode)
+    }
+
+    fn course_items(&mut self, course_inode: u64) -> Option<HashMap<u64, CourseItem>> {
+        let course = match self.course(course_inode) {
+            Some(course) => course,
+            None => return None,
+        };
+
+        if let Some(items) = course.items.clone() {
+            Some(items)
+        } else {
+            let mut items = HashMap::new();
+            for item in self.client.get_course_contents(&course.course).into_iter() {
+                items.insert(self.get_free_inode(), item);
+            }
+            self.courses.get_mut(&course_inode).unwrap().items = Some(items.clone());
+            Some(items)
+        }
+    }
+
+    fn course_item(&self, inode: u64) -> Option<&CourseItem> {
+        for course in self.courses.values() {
+            let items = match &course.items {
+                Some(items) => items,
+                None => continue,
+            };
+            for (item_inode, item) in items.iter() {
+                if inode == *item_inode {
+                    return Some(item);
+                }
+            }
+        }
+        None
     }
 
     fn course_dir_name(course: &Course) -> String {
@@ -92,15 +130,26 @@ impl BBFS {
 impl Filesystem for BBFS {
     fn lookup(&mut self, _req: &Request, parent: u64, name: &OsStr, reply: ReplyEntry) {
         println!("lookup");
+        let name = name.to_str().unwrap();
         if parent == 1 {
-            let name = name.to_str().unwrap();
             for (inode, course) in self.courses.iter() {
-                if name == BBFS::course_dir_name(course) {
+                if name == BBFS::course_dir_name(&course.course) {
                     reply.entry(&TTL, &dirattr(*inode), 0);
                     return;
                 }
             }
             reply.error(ENOENT);
+        } else if let Some(items) = self.course_items(parent) {
+            for (inode, item) in items.iter() {
+                if name == item.name {
+                    reply.entry(
+                        &TTL,
+                        &fileattr(*inode, self.client.get_item_size(item) as u64),
+                        0,
+                    );
+                    return;
+                }
+            }
         } else {
             reply.error(ENOENT);
         }
@@ -113,6 +162,8 @@ impl Filesystem for BBFS {
             _ => {
                 if let Some(_) = self.course(ino) {
                     reply.attr(&TTL, &dirattr(ino));
+                } else if let Some(item) = self.course_item(ino) {
+                    reply.attr(&TTL, &fileattr(ino, self.client.get_item_size(item) as u64))
                 } else {
                     reply.error(ENOENT);
                 }
@@ -133,9 +184,12 @@ impl Filesystem for BBFS {
     ) {
         println!("read(ino={ino}, offset={offset})");
 
-        // reply.data(&file.contents.as_bytes()[offset as usize..]);
-
-        reply.error(ENOENT);
+        if let Some(item) = self.course_item(ino) {
+            // TODO: Cache item contents
+            reply.data(&self.client.get_item_contents(item)[offset as usize..])
+        } else {
+            reply.error(ENOENT);
+        }
     }
 
     fn readdir(
@@ -148,18 +202,27 @@ impl Filesystem for BBFS {
     ) {
         println!("readdir(ino={ino}, offset={offset})");
 
-        if ino != 1 {
+        let mut entries = vec![];
+        entries.push((ino, FileType::Directory, ".".into()));
+        if ino == 1 {
+            entries.push((1, FileType::Directory, "..".into()));
+
+            for (inode, course) in self.courses.iter() {
+                entries.push((
+                    *inode,
+                    FileType::RegularFile,
+                    BBFS::course_dir_name(&course.course),
+                ))
+            }
+        } else if let Some(items) = self.course_items(ino) {
+            entries.push((1, FileType::Directory, "..".into()));
+
+            for (inode, item) in items {
+                entries.push((inode, FileType::RegularFile, item.name));
+            }
+        } else {
             reply.error(ENOENT);
             return;
-        }
-
-        let mut entries = vec![
-            (1, FileType::Directory, ".".into()),
-            (1, FileType::Directory, "..".into()),
-        ];
-
-        for (inode, course) in self.courses.iter() {
-            entries.push((*inode, FileType::RegularFile, BBFS::course_dir_name(course)))
         }
 
         for (i, entry) in entries.into_iter().enumerate().skip(offset as usize) {
