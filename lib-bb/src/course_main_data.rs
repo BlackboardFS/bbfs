@@ -54,10 +54,3 @@ fn get_course_sidebar(_course_id: String) -> anyhow::Result<()> {
 
     Ok(())
 }
-
-#[test]
-fn test_it() {
-    get_course_sidebar(String::new()).expect("broke");
-
-    panic!("Everything is fine actually");
-}
