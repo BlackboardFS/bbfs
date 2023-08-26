@@ -230,6 +230,7 @@ dependencies = [
 name = "fs"
 version = "0.1.0"
 dependencies = [
+ "dotenv",
  "fuser",
  "lib-bb",
  "libc",

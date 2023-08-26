@@ -28,9 +28,9 @@ pub struct Course {
 impl From<memberships_data::CourseEntry> for Course {
     fn from(value: memberships_data::CourseEntry) -> Self {
         Course {
-            short_name: value.course_id,
+            short_name: value.course.short_name[..8].into(),
             full_name: value.course.display_name,
-            id: value.course.short_name,
+            id: value.course_id,
         }
     }
 }

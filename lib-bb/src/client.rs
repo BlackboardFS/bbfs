@@ -71,7 +71,7 @@ impl BBPage {
     fn url(&self) -> String {
         let path = match self {
             Self::Me => "/learn/api/v1/users/me?expand=systemRoles,insRoles".into(),
-            Self::CourseList { user_id } => format!("learn/api/v1/users/{user_id}/memberships"),
+            Self::CourseList { user_id } => format!("/learn/api/v1/users/{user_id}/memberships?expand=course.effectiveAvailability,course.permissions,courseRole&includeCount=true&limit=10000"),
             Self::Course { id } => {
                 format!("/ultra/courses/{id}/cl/outline")
             }
@@ -186,7 +186,7 @@ mod tests {
     use super::BBAPIClient;
 
     fn get_client() -> BBAPIClient {
-        dotenv().unwrap();
+        dotenv().ok();
         let cookies = env::var("BBCOOKIE").unwrap();
         BBAPIClient::new(cookies)
     }

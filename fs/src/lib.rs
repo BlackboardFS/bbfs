@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::time::{Duration, UNIX_EPOCH};
 
-use lib_bb::client::{BBClient, BBMockClient};
+use lib_bb::client::BBClient;
 
 // TODO: Figure out the best TTL (if any)
 const TTL: Duration = Duration::from_secs(1);
@@ -49,16 +49,16 @@ struct CourseInode {
     items: Option<HashMap<u64, CourseItem>>,
 }
 
-pub struct BBFS {
-    client: BBMockClient,
+pub struct BBFS<Client: BBClient> {
+    client: Client,
     next_free_inode: u64,
     courses: HashMap<u64, CourseInode>,
 }
 
-impl BBFS {
-    pub fn new() -> BBFS {
+impl<Client: BBClient> BBFS<Client> {
+    pub fn new(client: Client) -> BBFS<Client> {
         let mut bbfs = BBFS {
-            client: BBMockClient,
+            client,
             next_free_inode: 2,
             courses: HashMap::new(),
         };
@@ -127,13 +127,13 @@ impl BBFS {
     }
 }
 
-impl Filesystem for BBFS {
+impl<Client: BBClient> Filesystem for BBFS<Client> {
     fn lookup(&mut self, _req: &Request, parent: u64, name: &OsStr, reply: ReplyEntry) {
         println!("lookup");
         let name = name.to_str().unwrap();
         if parent == 1 {
             for (inode, course) in self.courses.iter() {
-                if name == BBFS::course_dir_name(&course.course) {
+                if name == Self::course_dir_name(&course.course) {
                     reply.entry(&TTL, &dirattr(*inode), 0);
                     return;
                 }
@@ -211,7 +211,7 @@ impl Filesystem for BBFS {
                 entries.push((
                     *inode,
                     FileType::RegularFile,
-                    BBFS::course_dir_name(&course.course),
+                    Self::course_dir_name(&course.course),
                 ))
             }
         } else if let Some(items) = self.course_items(ino) {
