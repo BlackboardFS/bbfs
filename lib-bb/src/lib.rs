@@ -38,6 +38,7 @@ impl From<memberships_data::CourseEntry> for Course {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct CourseItem {
     pub name: String,
+    pub file_name: Option<String>,
     pub content: Option<CourseItemContent>,
     pub description: Option<String>,
     pub attachments: Vec<String>,
@@ -69,12 +70,14 @@ impl CourseItemContent {
 impl From<list_content_data::Content> for CourseItem {
     fn from(value: list_content_data::Content) -> Self {
         let name = value.title;
+        let file_name = value.file_name;
         let content = value.link.clone().map(CourseItemContent::from_url);
         let description = value.description;
         let attachments = value.attachments;
 
         CourseItem {
             name,
+            file_name,
             content,
             description,
             attachments,
@@ -86,7 +89,7 @@ impl From<course_main_data::SidebarEntry> for CourseItem {
     fn from(value: course_main_data::SidebarEntry) -> Self {
         CourseItem {
             name: value.name,
-
+            file_name: None,
             content: match value.link {
                 course_main_data::SidebarLink::Directory(url) => {
                     Some(CourseItemContent::FolderUrl(url))

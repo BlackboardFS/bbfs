@@ -178,6 +178,7 @@ impl BBClient for BBAPIClient {
 
     fn get_item_contents(&mut self, item: &CourseItem) -> Result<&[u8], Errno> {
         if self.cache.contains_key(item) {
+            println!("{:?}", &self.cache[item]);
             return Ok(&self.cache[item]);
         }
         let bytes = match &item.content {
