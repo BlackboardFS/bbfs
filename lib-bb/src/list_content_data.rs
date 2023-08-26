@@ -46,7 +46,11 @@ impl BBAPIClient {
 
                 let file_name = link
                     .as_ref()
-                    .and_then(|l| file.is_match(l).then(|| self.get_download_file_name(l)));
+                    .and_then(|l| {
+                        file.is_match(l)
+                            .then(|| self.get_download_file_name(l).ok())
+                    })
+                    .flatten();
 
                 println!("{:?}", file_name);
 

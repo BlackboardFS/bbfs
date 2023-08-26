@@ -101,15 +101,14 @@ impl BBAPIClient {
         Ok(serde_json::from_str(&json).map_err(|_| Errno::EIO)?)
     }
 
-    pub fn get_download_file_name(&self, url: &str) -> String {
+    pub fn get_download_file_name(&self, url: &str) -> anyhow::Result<String> {
         let url = &format!("{}{}", BB_BASE_URL, url);
         let response = self
             .agent
             .head(url)
             .set("Cookie", &self.cookies)
-            .call()
-            .unwrap();
-        response.get_url().split('/').last().unwrap().into()
+            .call()?;
+        Ok(response.get_url().split('/').last().unwrap().into())
     }
 }
 
