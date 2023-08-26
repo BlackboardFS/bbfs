@@ -52,8 +52,6 @@ impl BBAPIClient {
                     })
                     .flatten();
 
-                println!("{:?}", file_name);
-
                 let icon = elem
                     .tag("img")
                     .attr("class", "item_icon")
