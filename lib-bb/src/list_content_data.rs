@@ -2,18 +2,17 @@ use anyhow::anyhow;
 use soup::prelude::*;
 
 #[derive(Debug)]
-struct Content {
-    title: String,
-    link: Option<String>,
-    description: Option<String>,
+pub struct Content {
+    pub title: String,
+    pub link: Option<String>,
+    pub description: Option<String>,
     // vec of urls
-    attachments: Vec<String>,
+    pub attachments: Vec<String>,
 }
 
-fn get_folder_contents(_url: String) -> anyhow::Result<Vec<Content>> {
+fn get_folder_contents(html: &str) -> anyhow::Result<Vec<Content>> {
     // https://learn.uq.edu.au/webapps/blackboard/content/listContent.jsp?course_id={course_id}&content_id={content_id}&mode=reset
-    let _html = todo!();
-    let soup = Soup::new(_html);
+    let soup = Soup::new(html);
 
     let contents = soup
         .tag("ul")
@@ -55,5 +54,5 @@ fn get_folder_contents(_url: String) -> anyhow::Result<Vec<Content>> {
         .filter(|r| r.is_ok())
         .collect::<anyhow::Result<Vec<_>>>();
 
-    Ok(contents)
+    contents
 }

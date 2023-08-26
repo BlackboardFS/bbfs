@@ -15,6 +15,7 @@ use serde::Deserialize;
 pub mod client;
 mod course_main_data;
 mod list_content_data;
+pub mod memberships_data;
 mod ultra_data;
 
 #[derive(Clone)]
@@ -24,10 +25,20 @@ pub struct Course {
     pub id: String,
 }
 
+impl From<memberships_data::CourseEntry> for Course {
+    fn from(value: memberships_data::CourseEntry) -> Self {
+        Course {
+            short_name: value.course_id,
+            full_name: value.course.display_name,
+            id: value.course.short_name,
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct CourseItem {
     pub name: String,
-    pub url: String,
+    pub url: Option<String>,
     pub ty: CourseItemType,
 }
 
@@ -35,6 +46,17 @@ pub struct CourseItem {
 pub enum CourseItemType {
     Link,
     File,
+    Folder,
+}
+
+impl From<list_content_data::Content> for CourseItem {
+    fn from(value: list_content_data::Content) -> Self {
+        let name = value.title;
+        let url = value.link;
+        let ty = CourseItemType::File;
+
+        CourseItem { name, url, ty }
+    }
 }
 
 #[derive(Clone, Deserialize)]

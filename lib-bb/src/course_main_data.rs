@@ -30,11 +30,8 @@ impl SidebarLink {
 }
 
 #[allow(unreachable_code)]
-fn get_course_sidebar(_course_id: String) -> anyhow::Result<()> {
-    // get the html somehow
-    let _html =
-        todo!("This was an include_str!() to a download of the html that we will actually use");
-    let soup = Soup::new(_html);
+fn get_course_sidebar(html: &str) -> anyhow::Result<()> {
+    let soup = Soup::new(html);
 
     let side_bar = soup
         .tag("ul")

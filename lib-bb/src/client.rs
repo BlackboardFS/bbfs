@@ -1,5 +1,4 @@
-use crate::User;
-use crate::{Course, CourseItem, CourseItemType};
+use crate::{memberships_data::MembershipsData, Course, CourseItem, CourseItemType, User};
 use std::time::Duration;
 use ureq::{Agent, AgentBuilder};
 
@@ -45,7 +44,7 @@ impl BBClient for BBMockClient {
         if course.short_name == "MATH2401" {
             vec![CourseItem {
                 name: "Assignment 1".into(),
-                url: "https://learn.uq.edu.au/bbcswebdav/pid-9222876-dt-content-rid-56218459_1/xid-56218459_1".into(),
+                url: Some("https://learn.uq.edu.au/bbcswebdav/pid-9222876-dt-content-rid-56218459_1/xid-56218459_1".into()),
                 ty: CourseItemType::File,
             }]
         } else {
@@ -64,7 +63,7 @@ impl BBClient for BBMockClient {
 
 pub enum BBPage {
     Me,
-    CourseList,
+    CourseList { user_id: String },
     Course { id: String },
 }
 
@@ -72,7 +71,7 @@ impl BBPage {
     fn url(&self) -> String {
         let path = match self {
             Self::Me => "/learn/api/v1/users/me?expand=systemRoles,insRoles".into(),
-            Self::CourseList => "/ultra/course".into(),
+            Self::CourseList { user_id } => format!("learn/api/v1/users/{user_id}/memberships"),
             Self::Course { id } => {
                 format!("/ultra/courses/{id}/cl/outline")
             }
@@ -137,8 +136,14 @@ impl BBAPIClient {
 
 impl BBClient for BBAPIClient {
     fn get_courses(&self) -> Vec<Course> {
-        let _html = self.get_page(BBPage::CourseList).unwrap();
-        todo!("Parse html");
+        let user_id = self.get_me().unwrap().id;
+        let json = self.get_page(BBPage::CourseList { user_id }).unwrap();
+        let memberships_data: MembershipsData = serde_json::from_str(&json).unwrap();
+        memberships_data
+            .results
+            .into_iter()
+            .map(|course_entry| course_entry.into())
+            .collect()
     }
 
     fn get_course_contents(&self, course: &Course) -> Vec<CourseItem> {
@@ -149,9 +154,10 @@ impl BBClient for BBAPIClient {
     }
 
     fn get_item_size(&self, item: &CourseItem) -> usize {
+        // TODO remove unwraps
         let response = self
             .agent
-            .head(&item.url)
+            .head(&item.url.as_ref().unwrap())
             .set("Cookie", &self.cookies)
             .call()
             .unwrap();
@@ -159,9 +165,10 @@ impl BBClient for BBAPIClient {
     }
 
     fn get_item_contents(&self, item: &CourseItem) -> Vec<u8> {
+        // TODO remove unwraps
         let response = self
             .agent
-            .head(&item.url)
+            .head(&item.url.as_ref().unwrap())
             .set("Cookie", &self.cookies)
             .call()
             .unwrap();
