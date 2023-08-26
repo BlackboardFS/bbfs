@@ -1,2 +1,3 @@
 [submodule "ureq"]
+	path = "ureq"
 	url = https://github.com/BlackboardFS/ureq
