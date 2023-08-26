@@ -51,6 +51,7 @@ impl BBClient for BBMockClient {
                 name: "Assignment 1".into(),
                 content: Some(CourseItemContent::FileUrl("https://learn.uq.edu.au/bbcswebdav/pid-9222876-dt-content-rid-56218459_1/xid-56218459_1".into())),
                 description: None,
+                attachments: vec![],
             }]
         } else {
             vec![]
