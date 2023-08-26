@@ -55,8 +55,15 @@ impl BBAPIClient {
                 let attachments: Vec<_> = elem
                     .attr("class", "attachments")
                     .find_all()
-                    .filter_map(|elem| elem.tag("a").find())
-                    .filter_map(|elem| elem.get("href"))
+                    .flat_map(|elem| -> Vec<String> {
+                        elem.tag("li")
+                            .find_all()
+                            .filter_map(|elem| {
+                                elem.tag("a").find().and_then(|link| link.get("href"))
+                            })
+                            .collect()
+                    })
+                    .filter(|url| !url.starts_with("#"))
                     .collect();
 
                 let file_name = if link.clone().is_some_and(|l| file.is_match(&l)) {
