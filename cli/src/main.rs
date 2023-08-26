@@ -33,6 +33,7 @@ fn main() -> anyhow::Result<()> {
         std::fs::create_dir_all(&data_dir).unwrap();
         data_dir
     };
+    let wry_data_dir = data_dir.join("wry");
 
     let cookie_file = data_dir.join("cookie");
     let stdout =
@@ -42,7 +43,7 @@ fn main() -> anyhow::Result<()> {
 
     let bb_url = Url::parse("https://learn.uq.edu.au/").unwrap();
 
-    let cookies = find_cookies(&cookie_file, &bb_url).unwrap();
+    let cookies = find_cookies(&cookie_file, wry_data_dir, &bb_url).unwrap();
 
     if !args.monitor {
         Daemon::new().stdout(stdout).stderr(stderr).start().unwrap();
@@ -83,20 +84,13 @@ impl RequestExt for ureq::Request {
     }
 }
 
-fn find_cookies(cookie_file: &Path, bb_url: &Url) -> Option<String> {
+fn find_cookies(cookie_file: &Path, wry_data_dir: PathBuf, bb_url: &Url) -> Option<String> {
     std::fs::read_to_string(cookie_file)
         .ok()
         .and_then(|cookie| cookie_valid(&cookie, bb_url).then_some(cookie))
         .or_else(|| {
-            let cookie = cookie_monster::eat_user_cookies()
-                .expect("cookie monster failed")
-                .into_iter()
-                .reduce(|mut megacookie, cookie| {
-                    megacookie.push(';');
-                    megacookie.push_str(&cookie);
-                    megacookie
-                })
-                .unwrap_or_default();
+            let cookie =
+                cookie_monster::eat_user_cookies(wry_data_dir).expect("cookie monster failed");
 
             cookie_valid(&cookie, bb_url).then(move || {
                 if let Ok(mut file) = File::create(cookie_file) {

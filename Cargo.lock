@@ -456,6 +456,9 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "cookie",
+ "gio",
+ "gtk",
+ "webkit2gtk",
  "wry",
 ]
 

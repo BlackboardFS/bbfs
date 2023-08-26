@@ -1,126 +1,145 @@
 use std::{
     path::PathBuf,
-    sync::{Arc, Mutex},
+    sync::mpsc,
+    time::{Duration, Instant},
 };
-
-use anyhow::anyhow;
 
 use wry::{
     application::{
         dpi::LogicalSize,
         event::{Event, StartCause, WindowEvent},
-        event_loop::{ControlFlow, EventLoopBuilder},
+        event_loop::{ControlFlow, EventLoopBuilder, EventLoopProxy},
         platform::run_return::EventLoopExtRunReturn,
         window::WindowBuilder,
     },
-    webview::{WebContext, WebViewBuilder},
+    webview::{WebContext, WebView, WebViewBuilder},
 };
 
 #[derive(Debug)]
 enum UserEvent {
     Navigation(String),
-    GotCookies(String),
+    GotCookie(String),
 }
 
-pub fn eat_user_cookies() -> anyhow::Result<Vec<String>> {
+pub fn eat_user_cookies(context_data_dir: PathBuf) -> anyhow::Result<String> {
     let mut event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
     let proxy = event_loop.create_proxy();
+    let cookie_proxy = event_loop.create_proxy();
     let window = WindowBuilder::new()
         .with_title("Blackboard Authentication")
         .with_inner_size(LogicalSize::new(400, 600))
         .build(&event_loop)?;
 
-    let mut context = WebContext::new(Some(PathBuf::from("./data")));
-    let webview = WebViewBuilder::new(window)?
-        .with_web_context(&mut context)
-        .with_url("https://learn.uq.edu.au/")?
-        .with_navigation_handler(move |uri: String| {
-            let submitted = proxy.send_event(UserEvent::Navigation(uri.clone())).is_ok();
-            submitted
-        })
-        .build()?;
+    let mut context = WebContext::new(Some(context_data_dir));
+    let mut webview = Some(
+        WebViewBuilder::new(window)?
+            .with_web_context(&mut context)
+            .with_url("https://learn.uq.edu.au/")?
+            .with_navigation_handler(move |uri: String| {
+                proxy
+                    .send_event(UserEvent::Navigation(uri.clone()))
+                    .expect("event loop should be open");
+                true
+            })
+            .build()?,
+    );
+
+    let (cookie_send, cookie_recv) = mpsc::channel();
+    let mut finish_time = None;
 
     event_loop.run_return(move |event, _, control_flow| {
-        *control_flow = ControlFlow::Wait;
+        *control_flow = match finish_time {
+            Some(time) if Instant::now() > time => ControlFlow::Exit,
+            Some(_) => ControlFlow::Poll,
+            None => ControlFlow::Wait,
+        };
 
         match event {
             Event::NewEvents(StartCause::Init) => println!("Wry has started!"),
             Event::WindowEvent {
                 event: WindowEvent::CloseRequested,
                 ..
-            } => *control_flow = ControlFlow::Exit,
+            } => {
+                drop(
+                    webview
+                        .take()
+                        .expect("WebView should only be dropped once?"),
+                );
+            }
+            Event::WindowEvent {
+                event: WindowEvent::Destroyed,
+                ..
+            } => {
+                finish_time = Some(Instant::now() + Duration::from_secs(2));
+                println!("Window destroyed");
+            }
             Event::UserEvent(UserEvent::Navigation(url)) => {
                 println!("{url}");
                 if url == "https://learn.uq.edu.au/ultra" {
-                    // let cookie_proxy = cookie_proxy.clone();
-                    // println!("Running script");
-                    webview
-                        .evaluate_script_with_callback("document.cookie", move |cookies| {
-                            println!("{cookies}");
-                            // println!("Script callback");
-                            // cookie_proxy.send_event(UserEvent::GotCookies(cookies))
-                        })
-                        .unwrap();
+                    extract_cookies_from_webview(
+                        webview
+                            .as_ref()
+                            .expect("WebView should still be alive if we're navigating in it"),
+                        cookie_proxy.clone(),
+                    );
                 }
             }
-            Event::UserEvent(UserEvent::GotCookies(cookies)) => {
-                println!("{cookies}");
-                *control_flow = ControlFlow::Exit;
+            Event::UserEvent(UserEvent::GotCookie(got_cookie)) => {
+                println!("{got_cookie}");
+                cookie_send
+                    .send(got_cookie)
+                    .expect("channel should not be closed");
+                drop(
+                    webview
+                        .take()
+                        .expect("WebView should only be dropped once?"),
+                );
             }
             _ => (),
         }
     });
 
-    Err(anyhow!("nah"))
+    println!("Escaped");
+    cookie_recv.try_recv().map_err(Into::into)
+}
 
-    // gtk::init().unwrap();
-    // let window = Window::new(WindowType::Toplevel);
-    // let context = WebContext::default().unwrap();
+#[cfg(target_os = "linux")]
+fn extract_cookies_from_webview(webview: &WebView, cookie_proxy: EventLoopProxy<UserEvent>) {
+    use webkit2gtk::{CookieManagerExt, WebContextExt, WebViewExt};
+    use wry::webview::WebviewExtUnix;
 
-    // let webview = WebView::with_context(&context);
-    // webview.load_uri("https://learn.uq.edu.au/");
-    // window.add(&webview);
+    let gtk_webview = webview.webview();
 
-    // let settings = WebViewExt::settings(&webview).unwrap();
-    // settings.set_enable_developer_extras(true);
+    let cookie_manager = gtk_webview.web_context().unwrap().cookie_manager().unwrap();
+    cookie_manager.cookies(
+        "https://learn.uq.edu.au/",
+        None::<&gio::Cancellable>,
+        move |cookies| {
+            cookie_proxy
+                .send_event(UserEvent::GotCookie(
+                    cookies
+                        .unwrap()
+                        .into_iter()
+                        .map(|mut cookie| cookie.to_cookie_header().unwrap().as_str().to_owned())
+                        .reduce(|mut megacookie, cookie| {
+                            megacookie.push(';');
+                            megacookie.push_str(&cookie);
+                            megacookie
+                        })
+                        .unwrap_or_default(),
+                ))
+                .expect("event loop should be open");
+        },
+    );
+}
 
-    // let cookies = Arc::new(Mutex::new(Vec::new()));
-    // let cookies_send = cookies.clone();
+#[cfg(target_os = "macos")]
+async fn extract_cookies_from_webview(webview: &WebView, cookie_proxy: EventLoopProxy<UserEvent>) {
+    use wry::webview::WebviewExtMacOS;
 
-    // webview.connect_load_changed(move |webview, load_event| {
-    //     if webview
-    //         .uri()
-    //         .is_some_and(|uri| uri.as_str().starts_with("https://learn.uq.edu.au"))
-    //         && matches!(load_event, LoadEvent::Committed)
-    //     {
-    //         // We're loading the final blackboard page, so we ave successfully authenticated and
-    //         // no longer need our window
-    //         webview.parent_window().unwrap().hide();
+    let wk_webview = webview.webview();
 
-    //         let cookies_send_internal = cookies_send.clone();
-
-    //         let cookie_manager = webview.web_context().unwrap().cookie_manager().unwrap();
-    //         cookie_manager.cookies(
-    //             "https://learn.uq.edu.au/",
-    //             None::<&gio::Cancellable>,
-    //             move |cookies| {
-    //                 let mut stored_cookies = cookies_send_internal.lock().unwrap();
-    //                 for mut cookie in cookies.unwrap() {
-    //                     stored_cookies.push(cookie.to_cookie_header().unwrap().as_str().to_owned());
-    //                 }
-    //                 gtk::main_quit();
-    //             },
-    //         )
-    //     }
-    // });
-
-    // window.show_all();
-    // window.connect_delete_event(|_, _| {
-    //     gtk::main_quit();
-    //     Inhibit(false)
-    // });
-    // gtk::main();
-
-    // let cookies = cookies.lock().unwrap();
-    // cookies.as_slice().to_owned()
+    // Some Obj-C magic to get wk_webview.configuration.websiteDataStore.httpCookieStore, run
+    // getAllCookies: on that and filter for the NSHTTPCookies that have the relavant domain
+    todo!()
 }
