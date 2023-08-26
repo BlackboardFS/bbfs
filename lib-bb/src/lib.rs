@@ -39,11 +39,12 @@ pub enum CourseItemType {
 }
 
 #[derive(Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct User {
     pub id: String,
-    pub givenName: String,
-    pub familyName: String,
-    pub userName: String,
+    pub given_name: String,
+    pub family_name: String,
+    pub user_name: String,
 }
 
 // Sidebar entry
