@@ -107,6 +107,8 @@ impl BBAPIClient {
     pub fn get_download_file_name(&self, url: &str) -> anyhow::Result<String> {
         let url = &format!("{}{}", BB_BASE_URL, url);
         let response = self.agent.head(url).set("Cookie", &self.cookies).call()?;
+
+        // TODO: Parse URL encoded chars such as %20
         let last_component: String = response.get_url().split('/').last().unwrap().into();
         Ok(last_component.split('?').next().unwrap().into())
     }
@@ -138,6 +140,7 @@ impl BBClient for BBAPIClient {
 
     /// url should be from a CourseItemContent::Folder
     fn get_directory_contents(&self, url: String) -> Result<Vec<CourseItem>, Errno> {
+        println!("{url}");
         let html = self.get_page(BBPage::Folder { url })?;
         Ok(self
             .get_folder_contents(&html)

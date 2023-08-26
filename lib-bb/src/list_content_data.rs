@@ -53,16 +53,15 @@ impl BBAPIClient {
                     .ok_or(anyhow!("Icon had no src tag"))?;
 
                 let attachments: Vec<_> = elem
-                    .tag("a")
+                    .attr("class", "attachments")
                     .find_all()
+                    .filter_map(|elem| elem.tag("a").find())
                     .filter_map(|elem| elem.get("href"))
-                    .filter(|href| !href.starts_with("#"))
                     .collect();
 
                 let file_name = if link.clone().is_some_and(|l| file.is_match(&l)) {
                     self.get_download_file_name(link.as_ref().unwrap()).ok()
                 } else if attachments.is_empty() && link.is_none() {
-                    println!("Adding txt");
                     Some(format!("{title}.txt"))
                 } else {
                     None
