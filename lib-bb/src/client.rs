@@ -107,7 +107,8 @@ impl BBAPIClient {
     pub fn get_download_file_name(&self, url: &str) -> anyhow::Result<String> {
         let url = &format!("{}{}", BB_BASE_URL, url);
         let response = self.agent.head(url).set("Cookie", &self.cookies).call()?;
-        Ok(response.get_url().split('/').last().unwrap().into())
+        let last_component: String = response.get_url().split('/').last().unwrap().into();
+        Ok(last_component.split('?').next().unwrap().into())
     }
 }
 
@@ -142,24 +143,27 @@ impl BBClient for BBAPIClient {
             .get_folder_contents(&html)
             .map_err(|_| Errno::EIO)?
             .into_iter()
-            .map(|entry| {
-                entry.into()
-            })
+            .map(|entry| entry.into())
             .collect())
     }
 
     fn get_attachment_directory(&self, item: &CourseItem) -> Result<Vec<CourseItem>, Errno> {
-        item.attachments.iter().map(|url| {
-            let name = self.get_download_file_name(url).map_err(|_| Errno::ENETUNREACH)?;
+        item.attachments
+            .iter()
+            .map(|url| {
+                let name = self
+                    .get_download_file_name(url)
+                    .map_err(|_| Errno::ENETUNREACH)?;
 
-            Ok(CourseItem {
-                name: name.clone(),
-                file_name: Some(name),
-                content: Some(CourseItemContent::FileUrl(url.to_string())),
-                description: None,
-                attachments: vec![],
+                Ok(CourseItem {
+                    name: name.clone(),
+                    file_name: Some(name),
+                    content: Some(CourseItemContent::FileUrl(url.to_string())),
+                    description: None,
+                    attachments: vec![],
+                })
             })
-        }).collect()
+            .collect()
     }
 
     fn get_item_size(&self, item: &CourseItem) -> Result<usize, Errno> {

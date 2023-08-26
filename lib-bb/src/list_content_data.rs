@@ -53,10 +53,10 @@ impl BBAPIClient {
                     .ok_or(anyhow!("Icon had no src tag"))?;
 
                 let attachments: Vec<_> = elem
-                    .tag("span")
-                    .attr("class", "contextMenuContainer")
+                    .tag("a")
                     .find_all()
-                    .filter_map(|elem| elem.get("bb:menuGeneratorUrl"))
+                    .filter_map(|elem| elem.get("href"))
+                    .filter(|href| !href.starts_with("#"))
                     .collect();
 
                 let file_name = if link.clone().is_some_and(|l| file.is_match(&l)) {

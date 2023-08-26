@@ -176,12 +176,17 @@ impl<Client: BBClient> BBFS<Client> {
         let inodes = if let Some(children) = &item.children {
             children.clone()
         } else {
-            let (url, contents) = match item.item.content {
-                Some(CourseItemContent::FolderUrl(ref url)) => (
-                    url.clone(), // TODO: Also required because lifetimes
-                    self.client.get_directory_contents(url.clone())?,
-                ),
-                _ => return Ok(None),
+            let (url, contents) = if !item.item.attachments.is_empty() {
+                // TODO: Get URL of parent of the item (the item itself doesn't have a URL)
+                ("".into(), self.client.get_attachment_directory(&item.item)?)
+            } else {
+                match item.item.content {
+                    Some(CourseItemContent::FolderUrl(ref url)) => (
+                        url.clone(), // TODO: Also required because lifetimes
+                        self.client.get_directory_contents(url.clone())?,
+                    ),
+                    _ => return Ok(None),
+                }
             };
 
             let mut inodes = Vec::new();
@@ -218,11 +223,15 @@ impl<Client: BBClient> BBFS<Client> {
     }
 
     fn file_type(item: &CourseItem) -> FileType {
-        match item.content {
-            Some(CourseItemContent::FileUrl(_)) => FileType::RegularFile,
-            Some(CourseItemContent::Link(_)) => FileType::RegularFile,
-            Some(CourseItemContent::FolderUrl(_)) => FileType::Directory,
-            None => FileType::RegularFile,
+        if !item.attachments.is_empty() {
+            FileType::Directory
+        } else {
+            match item.content {
+                Some(CourseItemContent::FileUrl(_)) => FileType::RegularFile,
+                Some(CourseItemContent::Link(_)) => FileType::RegularFile,
+                Some(CourseItemContent::FolderUrl(_)) => FileType::Directory,
+                None => FileType::RegularFile,
+            }
         }
     }
 }
