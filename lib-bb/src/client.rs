@@ -165,8 +165,9 @@ impl BBClient for BBAPIClient {
                 id: course.id.clone(),
             })
             .unwrap();
+        println!("{:?}", course.id);
         get_course_sidebar(&html)
-            .unwrap()
+            .unwrap_or_default()
             .into_iter()
             .map(|entry| entry.into())
             .collect()

@@ -29,7 +29,6 @@ impl SidebarLink {
     }
 }
 
-#[allow(unreachable_code)]
 pub fn get_course_sidebar(html: &str) -> anyhow::Result<Vec<SidebarEntry>> {
     let soup = Soup::new(html);
 
