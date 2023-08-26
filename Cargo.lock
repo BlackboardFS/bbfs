@@ -219,7 +219,7 @@ dependencies = [
  "lib-bb",
  "serde",
  "serde_json",
- "ureq 2.7.1",
+ "ureq",
  "url",
 ]
 
@@ -916,7 +916,7 @@ dependencies = [
  "serde",
  "serde_json",
  "soup",
- "ureq 2.7.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "ureq",
 ]
 
 [[package]]
@@ -1971,22 +1971,6 @@ dependencies = [
  "serde",
  "serde_json",
  "socks",
- "url",
- "webpki-roots",
-]
-
-[[package]]
-name = "ureq"
-version = "2.7.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0b11c96ac7ee530603dcdf68ed1557050f374ce55a5a07193ebf8cbc9f8927e9"
-dependencies = [
- "base64",
- "flate2",
- "log",
- "once_cell",
- "rustls",
- "rustls-webpki 0.100.2",
  "url",
  "webpki-roots",
 ]
