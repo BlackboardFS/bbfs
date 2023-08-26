@@ -1,6 +1,7 @@
+use crate::LINK_FILE_EXTRA_SIZE;
 use crate::{
-    course_main_data::get_course_sidebar, memberships_data::MembershipsData, Course, CourseItem,
-    CourseItemContent, User,
+    course_main_data::get_course_sidebar, create_link_file, memberships_data::MembershipsData,
+    Course, CourseItem, CourseItemContent, User,
 };
 use nix::errno::Errno;
 use std::{collections::HashMap, time::Duration};
@@ -162,7 +163,7 @@ impl BBClient for BBAPIClient {
                 }
                 //CourseItemContent::FolderUrl(_) => unreachable!(),
                 CourseItemContent::FolderUrl(_) => 0,
-                CourseItemContent::Link(url) => url.len(),
+                CourseItemContent::Link(url) => url.len() + LINK_FILE_EXTRA_SIZE,
             },
             None => match &item.description {
                 Some(desc) => desc.len(),
@@ -194,7 +195,7 @@ impl BBClient for BBAPIClient {
                 }
                 //CourseItemContent::FolderUrl(_) => unreachable!(),
                 CourseItemContent::FolderUrl(_) => vec![],
-                CourseItemContent::Link(url) => url.bytes().collect(), // TODO: Convert to .webloc or .desktop
+                CourseItemContent::Link(url) => create_link_file(url).bytes().collect(),
             },
             None => match &item.description {
                 Some(desc) => desc.bytes().collect(),

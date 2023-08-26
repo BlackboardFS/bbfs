@@ -9,6 +9,7 @@ use std::ffi::OsStr;
 use std::time::{Duration, UNIX_EPOCH};
 
 use lib_bb::client::BBClient;
+use lib_bb::{create_link_file, LINK_FILE_EXT};
 
 // TODO: Figure out the best TTL (if any)
 const TTL: Duration = Duration::from_secs(1);
@@ -99,46 +100,16 @@ impl<Client: BBClient> BBFS<Client> {
         self.courses.get(&inode)
     }
 
-    #[cfg(target_os = "linux")]
-    fn create_hyperlink_item(&mut self, hyperlink: String) -> u64 {
+    fn create_hyperlink_item(&mut self, hyperlink: &str) -> u64 {
         let inode = self.get_free_inode();
         self.items.insert(
             inode,
             CourseItemInode {
                 item: CourseItem {
-                    name: "Blackboard.desktop".to_owned(),
+                    name: format!("Blackboard.{LINK_FILE_EXT}"),
                     file_name: None,
                     content: None,
-                    description: Some(format!(
-                        "\
-[Desktop Entry]
-Encoding=UTF-8
-Type=Link
-URL=https://learn.uq.edu.au{hyperlink}
-Icon=text-html
-"
-                    )),
-                    attachments: vec![],
-                },
-                children: Some(vec![]),
-            },
-        );
-        inode
-    }
-
-    #[cfg(target_os = "macos")]
-    fn create_hyperlink_item(&mut self, hyperlink: String) -> u64 {
-        let inode = self.get_free_inode();
-        self.items.insert(
-            inode,
-            CourseItemInode {
-                item: CourseItem {
-                    name: "Blackboard.webloc".to_owned(),
-                    file_name: None,
-                    content: None,
-                    description: Some(format!(
-                        r#"{ URL = "https://learn.uq.edu.au{hyperlink}"; }"#
-                    )),
+                    description: Some(create_link_file(hyperlink)),
                     attachments: vec![],
                 },
                 children: Some(vec![]),
@@ -172,7 +143,7 @@ Icon=text-html
             }
 
             inodes.push(
-                self.create_hyperlink_item(format!("/ultra/courses/{}/cl/outline", course_id)),
+                self.create_hyperlink_item(&format!("/ultra/courses/{}/cl/outline", course_id)),
             );
 
             self.courses.get_mut(&course_inode).unwrap().items = Some(inodes.clone());
@@ -207,7 +178,7 @@ Icon=text-html
         } else {
             let (url, contents) = match item.item.content {
                 Some(CourseItemContent::FolderUrl(ref url)) => (
-                    url.clone(),
+                    url.clone(), // TODO: Also required because lifetimes
                     self.client.get_directory_contents(url.clone())?,
                 ),
                 _ => return Ok(None),
@@ -227,7 +198,7 @@ Icon=text-html
                 );
             }
 
-            inodes.push(self.create_hyperlink_item(url));
+            inodes.push(self.create_hyperlink_item(&url));
 
             self.items.get_mut(&inode).unwrap().children = Some(inodes.clone());
 
@@ -292,7 +263,7 @@ impl<Client: BBClient> Filesystem for BBFS<Client> {
         };
 
         for (inode, item) in items.iter() {
-            if name == item.name {
+            if name == item.file_name.as_deref().unwrap_or(&item.name) {
                 match Self::file_type(item) {
                     FileType::RegularFile => match self.client.get_item_size(item) {
                         Ok(size) => reply.entry(&TTL, &fileattr(*inode, size as u64), 0),
@@ -401,13 +372,21 @@ impl<Client: BBClient> Filesystem for BBFS<Client> {
                     entries.push((1, FileType::Directory, "..".into()));
 
                     for (inode, item) in items {
-                        entries.push((inode, Self::file_type(&item), item.name.clone()));
+                        entries.push((
+                            inode,
+                            Self::file_type(&item),
+                            item.file_name.unwrap_or_else(|| item.name.clone()),
+                        ));
                     }
                 }
                 Ok(None) => match self.course_item_children(ino) {
                     Ok(Some(children)) => {
                         for (inode, child) in children {
-                            entries.push((inode, Self::file_type(&child), child.name.clone()));
+                            entries.push((
+                                inode,
+                                Self::file_type(&child),
+                                child.file_name.unwrap_or_else(|| child.name.clone()),
+                            ));
                         }
                     }
                     Ok(None) => {

@@ -70,8 +70,14 @@ impl CourseItemContent {
 impl From<list_content_data::Content> for CourseItem {
     fn from(value: list_content_data::Content) -> Self {
         let name = value.title;
-        let file_name = value.file_name;
         let content = value.link.clone().map(CourseItemContent::from_url);
+        let file_name = match content {
+            Some(CourseItemContent::Link(_)) => Some(format!(
+                "{}.{LINK_FILE_EXT}",
+                value.file_name.unwrap_or_else(|| name.clone())
+            )),
+            _ => value.file_name,
+        };
         let description = value.description;
         let attachments = value.attachments;
 
@@ -87,15 +93,20 @@ impl From<list_content_data::Content> for CourseItem {
 
 impl From<course_main_data::SidebarEntry> for CourseItem {
     fn from(value: course_main_data::SidebarEntry) -> Self {
+        let name = value.name;
+        let (file_name, content) = match value.link {
+            course_main_data::SidebarLink::Directory(url) => {
+                (None, Some(CourseItemContent::FolderUrl(url)))
+            }
+            course_main_data::SidebarLink::Link(url) => (
+                Some(format!("{name}.{LINK_FILE_EXT}")),
+                Some(CourseItemContent::Link(url)),
+            ),
+        };
         CourseItem {
-            name: value.name,
-            file_name: None,
-            content: match value.link {
-                course_main_data::SidebarLink::Directory(url) => {
-                    Some(CourseItemContent::FolderUrl(url))
-                }
-                course_main_data::SidebarLink::Link(url) => Some(CourseItemContent::Link(url)),
-            },
+            name,
+            file_name,
+            content,
             description: None,
             attachments: vec![],
         }
@@ -110,6 +121,41 @@ pub struct User {
     pub family_name: String,
     pub user_name: String,
 }
+
+#[cfg(target_os = "linux")]
+pub fn create_link_file(hyperlink: &str) -> String {
+    format!(
+        "\
+[Desktop Entry]
+Encoding=UTF-8
+Type=Link
+URL=https://learn.uq.edu.au{hyperlink}
+Icon=text-html
+"
+    )
+}
+
+#[cfg(target_os = "linux")]
+pub const LINK_FILE_EXT: &str = "desktop";
+#[cfg(target_os = "linux")]
+pub const LINK_FILE_EXTRA_SIZE: usize = "\
+[Desktop Entry]
+Encoding=UTF-8
+Type=Link
+URL=https://learn.uq.edu.au
+Icon=text-html
+"
+.len();
+
+#[cfg(target_os = "macos")]
+pub fn create_link_file(hyperlink: &str) -> String {
+    format!(r#"{ URL = "https://learn.uq.edu.au{hyperlink}"; }"#)
+}
+
+#[cfg(target_os = "macos")]
+pub const LINK_FILE_EXT: &str = "webloc";
+#[cfg(target_os = "macos")]
+pub const LINK_FILE_EXTRA_SIZE: usize = r#"{ URL = "https://learn.uq.edu.au"; }"#.len();
 
 // Sidebar entry
 // enum TabEntry {
