@@ -16,30 +16,63 @@ names and even the course's internal folder structure!
 ```
 $ tree Blackboard/COMP3506
 Blackboard/COMP3506
-├── Announcements
+├── Announcements.desktop
 ├── Assessment
 │   ├── Assignment One: Due Week 6
+│   ├── Blackboard.desktop
 │   └── Quiz Solutions
-│       ├── Quiz 1 Solutions
-│       ├── Quiz 2 Solutions
-│       └── Quiz 3 Solutions
+│       ├── Blackboard.desktop
+│       ├── quiz1-sol.pdf
+│       ├── quiz2-sol%281%29.pdf
+│       └── quiz3-sol.pdf
+├── Blackboard.desktop
 ├── Course Help
+│   ├── Blackboard.desktop
 │   └── Student services and resources
-├── Course Profile (ECP)
-├── Course Staff
-├── Ed Discussion
-├── Gradescope
+├── Course Profile (ECP).desktop
+├── Course Staff.desktop
+├── Ed Discussion.desktop
+├── Gradescope.desktop
 ├── Learning Resources
-│   ├── Course Reading List
-│   ├── Lecture_Recordings
-│   ├── Subject Guides
-│   └── Transcripts – Advice
-├── Library Links
-└── My Grades
+│   ├── Blackboard.desktop
+│   ├── Code Snippets
+│   │   ├── Blackboard.desktop
+│   │   ├── Week 1
+│   │   ├── Week 2
+│   │   ├── Week 3
+│   │   └── Week 4
+│   ├── COMP3506-7505-2023-plan-v3.pdf
+│   ├── Course Reading List.desktop
+│   ├── Lecture_Recordings.desktop
+│   ├── Resources
 
-5 directories, 16 files
+--snip--
+
+15 directories, 70 files
 ```
+
+Links to external resources are exposed as `.desktop` files (Linux) or `.webloc` files (macOS) so
+you can easily reach Gradescope, echo360, and even get back to Blackboard's own web UI right from
+your file browser!
 
 As a bonus, browsing the filesystem is significantly faster than browsing the Blackboard web UI,
 which is very helpful when you're stuck on slow campus WiFi.
 
+## Usage
+
+This is a FUSE-based filesystem. To mount:
+
+```
+bbfs <mount_point>
+```
+
+This will spawn a browser window for you to log in with your UQ login. **WE ARE ABLE TO INJECT
+ARBITRARY CODE INTO THIS BROWSER WINDOW, SO MAKE SURE YOU READ AND UNDERSTAND OUR CODE TO MAKE SURE
+WE'RE NOT STEALING YOUR CREDENTIALS** (the relavant code is in `cookie_monster/`; everything else
+only gets a session token).
+
+To unmount the filesystem:
+
+```
+fusermount -u <mount_point>
+```
