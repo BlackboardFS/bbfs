@@ -38,60 +38,59 @@ impl From<memberships_data::CourseEntry> for Course {
 #[derive(Clone, Debug)]
 pub struct CourseItem {
     pub name: String,
-    pub url: Option<String>,
-    pub ty: CourseItemType,
+    pub content: Option<CourseItemContent>,
+    pub description: Option<String>,
 }
 
 #[derive(Clone, Debug)]
-pub enum CourseItemType {
-    Link,
-    File,
-    Folder,
-    Text,
+pub enum CourseItemContent {
+    FileUrl(String),
+    FolderUrl(String),
+    Link(String),
+}
+
+impl CourseItemContent {
+    // not tested!
+    fn from_url(url: String) -> Self {
+        let file = Regex::new(r".*/bbcswebdav/.*").unwrap();
+        let folder = Regex::new(r".*/listContent\.jsp.*").unwrap();
+
+        if file.is_match(&url) {
+            CourseItemContent::FileUrl(url)
+        } else if folder.is_match(&url) {
+            CourseItemContent::FolderUrl(url)
+        } else {
+            CourseItemContent::Link(url)
+        }
+    }
 }
 
 impl From<list_content_data::Content> for CourseItem {
     fn from(value: list_content_data::Content) -> Self {
         let name = value.title;
-        let url = value.link;
-        let ty = match value.icon.as_str() {
-            "/images/ci/sets/set12/folder_on.svg" => CourseItemType::Folder,
-            _ => {
-                let re = Regex::new(
-                    r"/webapps/blackboard/content/listContent.jsp\?course_id=.*&content_id=.*",
-                )
-                .unwrap();
-                match url {
-                    Some(ref url) => match re.is_match(url) {
-                        true => CourseItemType::File,
-                        false => CourseItemType::Link,
-                    },
-                    None => CourseItemType::Text,
-                }
-            }
-        };
+        let content = value.link.clone().map(CourseItemContent::from_url);
+        let description = value.description;
 
-        CourseItem { name, url, ty }
+        CourseItem {
+            name,
+            content,
+            description,
+        }
     }
 }
 
 impl From<course_main_data::SidebarEntry> for CourseItem {
     fn from(value: course_main_data::SidebarEntry) -> Self {
-        match value.link {
-            course_main_data::SidebarLink::Directory(url) => {
-                CourseItem {
-                    name: value.name,
-                    url: Some(url),
-                    ty: CourseItemType::Folder,
+        CourseItem {
+            name: value.name,
+
+            content: match value.link {
+                course_main_data::SidebarLink::Directory(url) => {
+                    Some(CourseItemContent::FolderUrl(url))
                 }
+                course_main_data::SidebarLink::Link(url) => Some(CourseItemContent::Link(url)),
             },
-            course_main_data::SidebarLink::Link(url) => {
-                CourseItem {
-                    name: value.name,
-                    url: Some(url),
-                    ty: CourseItemType::Link,
-                }
-            },
+            description: None,
         }
     }
 }

@@ -1,6 +1,6 @@
 use crate::{
     course_main_data::get_course_sidebar, memberships_data::MembershipsData, Course, CourseItem,
-    CourseItemType, User,
+    CourseItemContent, User,
 };
 use std::time::Duration;
 use ureq::{Agent, AgentBuilder};
@@ -47,8 +47,8 @@ impl BBClient for BBMockClient {
         if course.short_name == "MATH2401" {
             vec![CourseItem {
                 name: "Assignment 1".into(),
-                url: Some("https://learn.uq.edu.au/bbcswebdav/pid-9222876-dt-content-rid-56218459_1/xid-56218459_1".into()),
-                ty: CourseItemType::File,
+                content: Some(CourseItemContent::FileUrl("https://learn.uq.edu.au/bbcswebdav/pid-9222876-dt-content-rid-56218459_1/xid-56218459_1".into())),
+                description: None,
             }]
         } else {
             vec![]
@@ -155,7 +155,8 @@ impl BBClient for BBAPIClient {
                 id: course.id.clone(),
             })
             .unwrap();
-        get_course_sidebar(&html).unwrap()
+        get_course_sidebar(&html)
+            .unwrap()
             .into_iter()
             .map(|entry| entry.into())
             .collect()
@@ -163,28 +164,57 @@ impl BBClient for BBAPIClient {
 
     fn get_item_size(&self, item: &CourseItem) -> usize {
         // TODO remove unwraps
-        let url = &format!("{}{}", BB_BASE_URL, item.url.as_ref().unwrap());
-        let response = self
-            .agent
-            .head(url)
-            .set("Cookie", &self.cookies)
-            .call()
-            .unwrap();
-        println!("{:?}", response);
-        response.header("Content-Length").unwrap_or("0").parse().unwrap()
+        match &item.content {
+            Some(content) => match content {
+                CourseItemContent::FileUrl(url) => {
+                    let url = &format!("{}{}", BB_BASE_URL, url);
+                    let response = self
+                        .agent
+                        .head(url)
+                        .set("Cookie", &self.cookies)
+                        .call()
+                        .unwrap();
+                    response
+                        .header("Content-Length")
+                        .unwrap_or("0")
+                        .parse()
+                        .unwrap()
+                }
+                //CourseItemContent::FolderUrl(_) => unreachable!(),
+                CourseItemContent::FolderUrl(_) => 0,
+                CourseItemContent::Link(url) => url.len(),
+            },
+            None => match &item.description {
+                Some(desc) => desc.len(),
+                None => 0,
+            },
+        }
     }
 
     fn get_item_contents(&self, item: &CourseItem) -> Vec<u8> {
         // TODO remove unwraps
-        let response = self
-            .agent
-            .head(&item.url.as_ref().unwrap())
-            .set("Cookie", &self.cookies)
-            .call()
-            .unwrap();
-        let mut bytes = Vec::new();
-        response.into_reader().read_to_end(&mut bytes).unwrap();
-        bytes
+        match &item.content {
+            Some(content) => match content {
+                CourseItemContent::FileUrl(url) => {
+                    let response = self
+                        .agent
+                        .head(&url)
+                        .set("Cookie", &self.cookies)
+                        .call()
+                        .unwrap();
+                    let mut bytes = Vec::new();
+                    response.into_reader().read_to_end(&mut bytes).unwrap();
+                    bytes
+                }
+                //CourseItemContent::FolderUrl(_) => unreachable!(),
+                CourseItemContent::FolderUrl(_) => vec![],
+                CourseItemContent::Link(url) => url.bytes().collect(),
+            },
+            None => match &item.description {
+                Some(desc) => desc.bytes().collect(),
+                None => vec![],
+            },
+        }
     }
 }
 
