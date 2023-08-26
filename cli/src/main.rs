@@ -1,9 +1,8 @@
 use std::fs::File;
-use std::io::{BufReader, Write};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use argh::FromArgs;
-use cookie_store::{Cookie, CookieStore};
 use daemonize_me::Daemon;
 use etcetera::BaseStrategy;
 use fuser::MountOption;
@@ -15,7 +14,7 @@ use lib_bb::client::BBAPIClient;
 #[derive(FromArgs)]
 /// A CLI tool to authenticate to and mount BlackboardFS
 struct BbfsCli {
-    /// don't spawn a daemon process, keep running in the current terminal
+    /// runs fs service in foreground
     #[argh(switch, short = 'm')]
     monitor: bool,
     /// the path to mount the Blackboard filesystem at
@@ -34,6 +33,7 @@ fn main() -> anyhow::Result<()> {
         std::fs::create_dir_all(&data_dir).unwrap();
         data_dir
     };
+    let wry_data_dir = data_dir.join("wry");
 
     let cookie_file = data_dir.join("cookie");
     let stdout =
@@ -43,7 +43,7 @@ fn main() -> anyhow::Result<()> {
 
     let bb_url = Url::parse("https://learn.uq.edu.au/").unwrap();
 
-    let cookies = find_cookies(&cookie_file, &bb_url).unwrap();
+    let cookies = find_cookies(&cookie_file, wry_data_dir, &bb_url).unwrap();
 
     if !args.monitor {
         Daemon::new().stdout(stdout).stderr(stderr).start().unwrap();
@@ -84,19 +84,14 @@ impl RequestExt for ureq::Request {
     }
 }
 
-fn find_cookies(cookie_file: &Path, bb_url: &Url) -> Option<String> {
+fn find_cookies(cookie_file: &Path, wry_data_dir: PathBuf, bb_url: &Url) -> Option<String> {
     std::fs::read_to_string(cookie_file)
         .ok()
         .and_then(|cookie| cookie_valid(&cookie, bb_url).then_some(cookie))
         .or_else(|| {
-            let cookie = cookie_monster::eat_user_cookies()
-                .into_iter()
-                .reduce(|mut megacookie, cookie| {
-                    megacookie.push(';');
-                    megacookie.push_str(&cookie);
-                    megacookie
-                })
-                .unwrap_or_default();
+            let cookie =
+                cookie_monster::eat_user_cookies(wry_data_dir).expect("cookie monster failed");
+
             cookie_valid(&cookie, bb_url).then(move || {
                 if let Ok(mut file) = File::create(cookie_file) {
                     if file.write_all(cookie.as_bytes()).is_err() {
