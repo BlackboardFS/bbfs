@@ -15,6 +15,8 @@ pub trait BBClient {
 
     fn get_directory_contents(&self, url: String) -> Result<Vec<CourseItem>, Errno>;
 
+    fn get_attachment_directory(&self, item: &CourseItem) -> Result<Vec<CourseItem>, Errno>;
+
     fn get_item_size(&self, item: &CourseItem) -> Result<usize, Errno>;
     fn get_item_contents(&mut self, item: &CourseItem) -> Result<&[u8], Errno>;
 }
@@ -140,8 +142,24 @@ impl BBClient for BBAPIClient {
             .get_folder_contents(&html)
             .map_err(|_| Errno::EIO)?
             .into_iter()
-            .map(|entry| entry.into())
+            .map(|entry| {
+                entry.into()
+            })
             .collect())
+    }
+
+    fn get_attachment_directory(&self, item: &CourseItem) -> Result<Vec<CourseItem>, Errno> {
+        item.attachments.iter().map(|url| {
+            let name = self.get_download_file_name(url).map_err(|_| Errno::ENETUNREACH)?;
+
+            Ok(CourseItem {
+                name: name.clone(),
+                file_name: Some(name),
+                content: Some(CourseItemContent::FileUrl(url.to_string())),
+                description: None,
+                attachments: vec![],
+            })
+        }).collect()
     }
 
     fn get_item_size(&self, item: &CourseItem) -> Result<usize, Errno> {
