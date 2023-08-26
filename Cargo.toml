@@ -7,6 +7,3 @@ members = [
     "cli",
     "cookie-monster",
 ]
-
-[patch.crates-io]
-ureq = { path = "ureq" }

@@ -15,6 +15,7 @@ use lib_bb::client::BBAPIClient;
 #[derive(FromArgs)]
 /// A CLI tool to authenticate to and mount BlackboardFS
 struct BbfsCli {
+    /// don't spawn a daemon process, keep running in the current terminal
     #[argh(switch, short = 'm')]
     monitor: bool,
     /// the path to mount the Blackboard filesystem at
