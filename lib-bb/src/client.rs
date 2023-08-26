@@ -1,4 +1,7 @@
-use crate::{memberships_data::MembershipsData, Course, CourseItem, CourseItemType, User};
+use crate::{
+    course_main_data::get_course_sidebar, memberships_data::MembershipsData, Course, CourseItem,
+    CourseItemType, User,
+};
 use std::time::Duration;
 use ureq::{Agent, AgentBuilder};
 
@@ -73,7 +76,7 @@ impl BBPage {
             Self::Me => "/learn/api/v1/users/me?expand=systemRoles,insRoles".into(),
             Self::CourseList { user_id } => format!("/learn/api/v1/users/{user_id}/memberships?expand=course.effectiveAvailability,course.permissions,courseRole&includeCount=true&limit=10000"),
             Self::Course { id } => {
-                format!("/ultra/courses/{id}/cl/outline")
+                format!("/webapps/blackboard/execute/announcement?method=search&course_id={id}")
             }
         };
         format!("{BB_BASE_URL}{path}")
@@ -147,21 +150,28 @@ impl BBClient for BBAPIClient {
     }
 
     fn get_course_contents(&self, course: &Course) -> Vec<CourseItem> {
-        let _html = self.get_page(BBPage::Course {
-            id: course.id.clone(),
-        });
-        todo!("Parse html");
+        let html = self
+            .get_page(BBPage::Course {
+                id: course.id.clone(),
+            })
+            .unwrap();
+        get_course_sidebar(&html).unwrap()
+            .into_iter()
+            .map(|entry| entry.into())
+            .collect()
     }
 
     fn get_item_size(&self, item: &CourseItem) -> usize {
         // TODO remove unwraps
+        let url = &format!("{}{}", BB_BASE_URL, item.url.as_ref().unwrap());
         let response = self
             .agent
-            .head(&item.url.as_ref().unwrap())
+            .head(url)
             .set("Cookie", &self.cookies)
             .call()
             .unwrap();
-        response.header("Content-Length").unwrap().parse().unwrap()
+        println!("{:?}", response);
+        response.header("Content-Length").unwrap_or("0").parse().unwrap()
     }
 
     fn get_item_contents(&self, item: &CourseItem) -> Vec<u8> {

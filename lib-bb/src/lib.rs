@@ -35,14 +35,14 @@ impl From<memberships_data::CourseEntry> for Course {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct CourseItem {
     pub name: String,
     pub url: Option<String>,
     pub ty: CourseItemType,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum CourseItemType {
     Link,
     File,
@@ -72,6 +72,27 @@ impl From<list_content_data::Content> for CourseItem {
         };
 
         CourseItem { name, url, ty }
+    }
+}
+
+impl From<course_main_data::SidebarEntry> for CourseItem {
+    fn from(value: course_main_data::SidebarEntry) -> Self {
+        match value.link {
+            course_main_data::SidebarLink::Directory(url) => {
+                CourseItem {
+                    name: value.name,
+                    url: Some(url),
+                    ty: CourseItemType::Folder,
+                }
+            },
+            course_main_data::SidebarLink::Link(url) => {
+                CourseItem {
+                    name: value.name,
+                    url: Some(url),
+                    ty: CourseItemType::Link,
+                }
+            },
+        }
     }
 }
 

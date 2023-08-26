@@ -6,13 +6,13 @@ use soup::prelude::*;
 // gives html that has the sidebar
 
 #[derive(Debug)]
-struct SidebarEntry {
-    link: SidebarLink,
-    name: String,
+pub struct SidebarEntry {
+    pub link: SidebarLink,
+    pub name: String,
 }
 
 #[derive(Debug)]
-enum SidebarLink {
+pub enum SidebarLink {
     Directory(String),
     Link(String),
 }
@@ -30,7 +30,7 @@ impl SidebarLink {
 }
 
 #[allow(unreachable_code)]
-fn get_course_sidebar(html: &str) -> anyhow::Result<()> {
+pub fn get_course_sidebar(html: &str) -> anyhow::Result<Vec<SidebarEntry>> {
     let soup = Soup::new(html);
 
     let side_bar = soup
@@ -52,5 +52,5 @@ fn get_course_sidebar(html: &str) -> anyhow::Result<()> {
         .collect::<anyhow::Result<Vec<_>>>()?;
     println!("{:?}", side_bar);
 
-    Ok(())
+    Ok(side_bar)
 }
