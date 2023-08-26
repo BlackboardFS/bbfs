@@ -1,9 +1,11 @@
+use std::sync::{Arc, Mutex};
+
 use gtk::prelude::*;
 use gtk::{Inhibit, Window, WindowType};
 use webkit2gtk::traits::{CookieManagerExt, SettingsExt, WebContextExt, WebViewExt};
 use webkit2gtk::{LoadEvent, WebContext, WebView};
 
-fn main() {
+pub fn eat_user_cookies() -> Vec<String> {
     gtk::init().unwrap();
     let window = Window::new(WindowType::Toplevel);
     let context = WebContext::default().unwrap();
@@ -15,6 +17,9 @@ fn main() {
     let settings = WebViewExt::settings(&webview).unwrap();
     settings.set_enable_developer_extras(true);
 
+    let cookies = Arc::new(Mutex::new(Vec::new()));
+    let cookies_send = cookies.clone();
+
     webview.connect_load_changed(move |webview, load_event| {
         if webview
             .uri()
@@ -25,13 +30,17 @@ fn main() {
             // no longer need our window
             webview.parent_window().unwrap().hide();
 
+            let cookies_send_internal = cookies_send.clone();
+
             let cookie_manager = webview.web_context().unwrap().cookie_manager().unwrap();
             cookie_manager.cookies(
                 "https://learn.uq.edu.au/",
                 None::<&gio::Cancellable>,
-                |cookies| {
+                move |cookies| {
+                    let mut stored_cookies = cookies_send_internal.lock().unwrap();
                     for mut cookie in cookies.unwrap() {
-                        println!("{}", cookie.to_cookie_header().unwrap().as_str());
+                        stored_cookies.push(cookie.to_cookie_header().unwrap().as_str().to_owned());
+                        eprintln!("Cookie: {}", cookie.to_cookie_header().unwrap().as_str());
                     }
                     gtk::main_quit();
                 },
@@ -45,4 +54,7 @@ fn main() {
         Inhibit(false)
     });
     gtk::main();
+
+    let cookies = cookies.lock().unwrap();
+    cookies.as_slice().to_owned()
 }
