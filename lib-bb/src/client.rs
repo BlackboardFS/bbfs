@@ -1,6 +1,6 @@
 use crate::{
-    course_main_data::get_course_sidebar, list_content_data::get_folder_contents,
-    memberships_data::MembershipsData, Course, CourseItem, CourseItemContent, User,
+    course_main_data::get_course_sidebar, memberships_data::MembershipsData, Course, CourseItem,
+    CourseItemContent, User,
 };
 use std::{collections::HashMap, time::Duration};
 use ureq::{Agent, AgentBuilder};
@@ -131,7 +131,11 @@ impl BBAPIClient {
             .timeout_read(Duration::from_secs(5))
             .timeout_write(Duration::from_secs(5))
             .build();
-        Self { cookies, agent, cache: HashMap::new() }
+        Self {
+            cookies,
+            agent,
+            cache: HashMap::new(),
+        }
     }
 
     pub fn get_page(&self, page: BBPage) -> Result<String, BBClientError> {
@@ -146,6 +150,17 @@ impl BBAPIClient {
     pub fn get_me(&self) -> Result<User, BBClientError> {
         let json = self.get_page(BBPage::Me)?;
         Ok(serde_json::from_str(&json)?)
+    }
+
+    pub fn get_download_file_name(&self, url: &str) -> String {
+        let url = &format!("{}{}", BB_BASE_URL, url);
+        let response = self
+            .agent
+            .head(url)
+            .set("Cookie", &self.cookies)
+            .call()
+            .unwrap();
+        response.get_url().split('/').last().unwrap().into()
     }
 }
 
@@ -178,7 +193,7 @@ impl BBClient for BBAPIClient {
     /// url should be from a CourseItemContent::Folder
     fn get_directory_contents(&self, url: String) -> Vec<CourseItem> {
         let html = self.get_page(BBPage::Folder { url }).unwrap();
-        get_folder_contents(&html)
+        self.get_folder_contents(&html)
             .unwrap()
             .into_iter()
             .map(|entry| entry.into())

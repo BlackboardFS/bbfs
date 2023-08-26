@@ -49,7 +49,6 @@ pub fn get_course_sidebar(html: &str) -> anyhow::Result<Vec<SidebarEntry>> {
             Ok(SidebarEntry { link, name })
         })
         .collect::<anyhow::Result<Vec<_>>>()?;
-    println!("{:?}", side_bar);
 
     Ok(side_bar)
 }
