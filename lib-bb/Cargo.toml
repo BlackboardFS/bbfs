@@ -14,3 +14,4 @@ serde_json = "1.0.105"
 soup = "0.5.1"
 ureq = "2.7.1"
 nix = { version = "0.26.2", default-features = false }
+pct-str = "2.0.0"

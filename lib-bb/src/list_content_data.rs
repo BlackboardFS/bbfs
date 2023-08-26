@@ -21,8 +21,7 @@ impl BBAPIClient {
         let file = Regex::new(r".*/bbcswebdav/.*").unwrap();
         let soup = Soup::new(html);
 
-        let contents = soup
-            .tag("ul")
+        soup.tag("ul")
             .attr("class", "contentList")
             .find()
             .ok_or(anyhow!("There was no contentList"))?
@@ -84,8 +83,6 @@ impl BBAPIClient {
                 })
             })
             .filter(|r| r.is_ok())
-            .collect::<anyhow::Result<Vec<_>>>();
-
-        contents
+            .collect::<anyhow::Result<Vec<_>>>()
     }
 }

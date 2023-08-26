@@ -4,6 +4,7 @@ use crate::{
     Course, CourseItem, CourseItemContent, User,
 };
 use nix::errno::Errno;
+use pct_str::PctStr;
 use std::{collections::HashMap, time::Duration};
 use ureq::{Agent, AgentBuilder};
 
@@ -108,9 +109,11 @@ impl BBAPIClient {
         let url = &format!("{}{}", BB_BASE_URL, url);
         let response = self.agent.head(url).set("Cookie", &self.cookies).call()?;
 
-        // TODO: Parse URL encoded chars such as %20
         let last_component: String = response.get_url().split('/').last().unwrap().into();
-        Ok(last_component.split('?').next().unwrap().into())
+        let file_name = last_component.split('?').next().unwrap();
+        Ok(PctStr::new(file_name)
+            .map(PctStr::decode)
+            .unwrap_or(file_name.to_owned()))
     }
 }
 
