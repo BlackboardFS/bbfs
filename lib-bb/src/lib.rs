@@ -10,8 +10,8 @@
 
 #![allow(dead_code)]
 
+use regex::Regex;
 use serde::Deserialize;
-
 pub mod client;
 mod course_main_data;
 mod list_content_data;
@@ -47,13 +47,29 @@ pub enum CourseItemType {
     Link,
     File,
     Folder,
+    Text,
 }
 
 impl From<list_content_data::Content> for CourseItem {
     fn from(value: list_content_data::Content) -> Self {
         let name = value.title;
         let url = value.link;
-        let ty = CourseItemType::File;
+        let ty = match value.icon.as_str() {
+            "/images/ci/sets/set12/folder_on.svg" => CourseItemType::Folder,
+            _ => {
+                let re = Regex::new(
+                    r"/webapps/blackboard/content/listContent.jsp\?course_id=.*&content_id=.*",
+                )
+                .unwrap();
+                match url {
+                    Some(ref url) => match re.is_match(url) {
+                        true => CourseItemType::File,
+                        false => CourseItemType::Link,
+                    },
+                    None => CourseItemType::Text,
+                }
+            }
+        };
 
         CourseItem { name, url, ty }
     }

@@ -6,6 +6,8 @@ pub struct Content {
     pub title: String,
     pub link: Option<String>,
     pub description: Option<String>,
+    // url
+    pub icon: String,
     // vec of urls
     pub attachments: Vec<String>,
 }
@@ -37,6 +39,14 @@ fn get_folder_contents(html: &str) -> anyhow::Result<Vec<Content>> {
                 .find()
                 .map(|elem| elem.text());
 
+            let icon = elem
+                .tag("img")
+                .attr("class", "item_icon")
+                .find()
+                .ok_or(anyhow!("Item had no icon"))?
+                .get("src")
+                .ok_or(anyhow!("Icon had no src tag"))?;
+
             let attachments = elem
                 .tag("span")
                 .attr("class", "contextMenuContainer")
@@ -48,6 +58,7 @@ fn get_folder_contents(html: &str) -> anyhow::Result<Vec<Content>> {
                 title,
                 link,
                 description,
+                icon,
                 attachments,
             })
         })
