@@ -28,8 +28,8 @@ fn attr(inode: u64, nlink: u32, kind: FileType, size: u64, perm: u16) -> FileAtt
         kind,
         perm,
         nlink,
-        uid: 501,
-        gid: 20,
+        uid: nix::unistd::Uid::current().as_raw(),
+        gid: nix::unistd::Gid::current().as_raw(),
         rdev: 0,
         flags: 0,
         blksize: BLOCK_SIZE,
@@ -38,12 +38,12 @@ fn attr(inode: u64, nlink: u32, kind: FileType, size: u64, perm: u16) -> FileAtt
 
 fn dirattr(inode: u64) -> FileAttr {
     // TODO: Correctly calculate nlink for directory
-    attr(inode, 2, FileType::Directory, 0, 0o755)
+    attr(inode, 2, FileType::Directory, 0, 0o500)
 }
 
 fn fileattr(inode: u64, size: u64) -> FileAttr {
     // We don't handle symlinks so nlink can just be hardcoded to 1 for files
-    attr(inode, 1, FileType::RegularFile, size, 0o644)
+    attr(inode, 1, FileType::RegularFile, size, 0o400)
 }
 
 #[derive(Clone)]
