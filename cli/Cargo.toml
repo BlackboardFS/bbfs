@@ -9,6 +9,9 @@ argh = "0.1.12"
 cookie-monster = { path = "../cookie-monster" }
 cookie_store = "^0.19"
 etcetera = "0.8.0"
+fs = { path = "../fs" }
+fuser = "0.13.0"
+lib-bb = { path = "../lib-bb" }
 serde = { version = "1.0.187", features = ["derive"] }
 serde_json = "1.0.105"
 ureq = { version = "2.7.1", features = ["cookies"] }

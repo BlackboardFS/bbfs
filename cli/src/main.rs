@@ -1,18 +1,27 @@
 use std::fs::File;
-use std::io::BufReader;
+use std::io::{BufReader, Write};
 use std::path::{Path, PathBuf};
 
 use argh::FromArgs;
 use cookie_store::{Cookie, CookieStore};
 use etcetera::BaseStrategy;
+use fuser::MountOption;
 use url::Url;
 
-// #[derive(FromArgs)]
-// struct BbfsCli {
-//     mount_point: PathBuf,
-// }
+use fs::BBFS;
+use lib_bb::client::BBAPIClient;
+
+#[derive(FromArgs)]
+/// A CLI tool to authenticate to and mount BlackboardFS
+struct BbfsCli {
+    /// the path to mount the Blackboard filesystem at
+    #[argh(positional)]
+    mount_point: PathBuf,
+}
 
 fn main() -> anyhow::Result<()> {
+    let args: BbfsCli = argh::from_env();
+
     let strategy = etcetera::choose_base_strategy().unwrap();
     let data_dir = {
         let mut data_dir = strategy.data_dir();
@@ -21,12 +30,19 @@ fn main() -> anyhow::Result<()> {
         data_dir
     };
 
-    let cookie_file = data_dir.join("cookies.json");
+    let cookie_file = data_dir.join("cookie");
 
     let bb_url = Url::parse("https://learn.uq.edu.au/").unwrap();
 
-    find_cookies(&cookie_file, &bb_url).unwrap();
+    let cookies = find_cookies(&cookie_file, &bb_url).unwrap();
 
+    let client = BBAPIClient::new(cookies);
+    fuser::mount2(
+        BBFS::new(client),
+        &args.mount_point,
+        &[MountOption::AutoUnmount],
+    )
+    .unwrap();
     Ok(())
 }
 
@@ -55,73 +71,37 @@ impl RequestExt for ureq::Request {
     }
 }
 
-fn find_cookies(cookie_file: &Path, bb_url: &Url) -> Option<Vec<String>> {
-    File::open(cookie_file)
+fn find_cookies(cookie_file: &Path, bb_url: &Url) -> Option<String> {
+    std::fs::read_to_string(cookie_file)
         .ok()
-        .and_then(|file| serde_json::from_reader::<_, Vec<String>>(BufReader::new(file)).ok())
-        .and_then(|cookies| cookies_valid(&cookies, bb_url).then_some(cookies))
+        .and_then(|cookie| cookie_valid(&cookie, bb_url).then_some(cookie))
         .or_else(|| {
-            let cookies = cookie_monster::eat_user_cookies();
-            cookies_valid(&cookies, bb_url).then(move || {
+            let cookie = cookie_monster::eat_user_cookies()
+                .into_iter()
+                .reduce(|mut megacookie, cookie| {
+                    megacookie.push(';');
+                    megacookie.push_str(&cookie);
+                    megacookie
+                })
+                .unwrap_or_default();
+            cookie_valid(&cookie, bb_url).then(move || {
                 if let Ok(mut file) = File::create(cookie_file) {
-                    if serde_json::to_writer_pretty(&mut file, &cookies).is_err() {
-                        eprintln!("Failed to save cookies to json");
+                    if file.write_all(cookie.as_bytes()).is_err() {
+                        eprintln!("Failed to write cookie");
                     }
                 } else {
-                    eprintln!("Failed to write to cookie file");
+                    eprintln!("Failed to open cookie file");
                 }
-                cookies
+                cookie
             })
         })
 }
 
 // TODO(theonlymrcat): This will panic if your internet is down
-fn cookies_valid(cookies: &[String], bb_url: &Url) -> bool {
+fn cookie_valid(cookie: &str, bb_url: &Url) -> bool {
     redirecting_agent()
         .request_url("GET", bb_url)
-        .with_cookies(cookies)
-        .call()
-        .map(|response| response.get_url().starts_with("https://learn.uq.edu.au/"))
-        .unwrap()
-}
-
-// --- The cookie store isn't passing cookies properly, so this code isn't working ---
-fn create_valid_agent(cookie_file: &Path, bb_url: &Url) -> Option<ureq::Agent> {
-    File::open(cookie_file)
-        .ok()
-        .and_then(|file| CookieStore::load_json(BufReader::new(file)).ok())
-        .and_then(|cookie_store| {
-            let agent = ureq::AgentBuilder::new().cookie_store(cookie_store).build();
-            agent_cookies_valid(&agent, bb_url).then_some(agent)
-        })
-        .or_else(|| {
-            Some(
-                CookieStore::from_cookies(
-                    cookie_monster::eat_user_cookies()
-                        .into_iter()
-                        .map(|s| dbg!(Cookie::parse(s, bb_url))),
-                    true,
-                )
-                .unwrap(),
-            )
-            .and_then(|cookie_store| {
-                let agent = ureq::AgentBuilder::new().cookie_store(cookie_store).build();
-                if let Ok(mut file) = File::create(cookie_file) {
-                    if agent.cookie_store().save_json(&mut file).is_err() {
-                        eprintln!("Failed to save cookies to json");
-                    }
-                } else {
-                    eprintln!("Failed to write to cookie file");
-                }
-                agent_cookies_valid(&agent, bb_url).then(move || agent)
-            })
-        })
-}
-
-// TODO(theonlymrcat): This will panic if your internet is down
-fn agent_cookies_valid(agent: &ureq::Agent, bb_url: &Url) -> bool {
-    agent
-        .request_url("GET", bb_url)
+        .set("cookie", cookie)
         .call()
         .map(|response| response.get_url().starts_with("https://learn.uq.edu.au/"))
         .unwrap()
