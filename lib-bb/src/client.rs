@@ -51,31 +51,6 @@ pub struct BBAPIClient {
     cache: HashMap<CourseItem, Vec<u8>>,
 }
 
-#[derive(Debug)]
-pub enum BBClientError {
-    IO(std::io::Error),
-    UReq(ureq::Error),
-    Serde(serde_json::Error),
-}
-
-impl From<std::io::Error> for BBClientError {
-    fn from(value: std::io::Error) -> Self {
-        Self::IO(value)
-    }
-}
-
-impl From<ureq::Error> for BBClientError {
-    fn from(value: ureq::Error) -> Self {
-        Self::UReq(value)
-    }
-}
-
-impl From<serde_json::Error> for BBClientError {
-    fn from(value: serde_json::Error) -> Self {
-        Self::Serde(value)
-    }
-}
-
 impl BBAPIClient {
     pub fn new(cookies: String) -> Self {
         let agent: Agent = AgentBuilder::new()
@@ -90,19 +65,19 @@ impl BBAPIClient {
     }
 
     pub fn get_page(&self, page: BBPage) -> Result<String, Errno> {
-        Ok(self
+        self
             .agent
             .get(&page.url())
             .set("Cookie", &self.cookies)
             .call()
             .map_err(|_| Errno::ENETRESET)? // TODO: Reach inside and check the error type
             .into_string()
-            .map_err(|_| Errno::EIO)?)
+            .map_err(|_| Errno::EIO)
     }
 
     pub fn get_me(&self) -> Result<User, Errno> {
         let json = self.get_page(BBPage::Me)?;
-        Ok(serde_json::from_str(&json).map_err(|_| Errno::EIO)?)
+        serde_json::from_str(&json).map_err(|_| Errno::EIO)
     }
 
     pub fn get_download_file_name(&self, url: &str) -> anyhow::Result<String> {

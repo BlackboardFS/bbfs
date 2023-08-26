@@ -294,7 +294,7 @@ impl<Client: BBClient> Filesystem for BBFS<Client> {
         match ino {
             1 => reply.attr(&TTL, &dirattr(1)),
             _ => {
-                if let Some(_) = self.course(ino) {
+                if self.course(ino).is_some() {
                     reply.attr(&TTL, &dirattr(ino));
                 } else if let Some(item) = self.course_item(ino) {
                     match Self::file_type(item) {
@@ -343,7 +343,6 @@ impl<Client: BBClient> Filesystem for BBFS<Client> {
                 Ok(contents) => reply.data(contents),
                 Err(errno) => {
                     reply.error(errno as _);
-                    return;
                 }
             }
         } else {
