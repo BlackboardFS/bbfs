@@ -12,7 +12,7 @@ struct Content {
 
 fn get_folder_contents(_url: String) -> anyhow::Result<Vec<Content>> {
     // https://learn.uq.edu.au/webapps/blackboard/content/listContent.jsp?course_id={course_id}&content_id={content_id}&mode=reset
-    let _html = include_str!("/home/benjamin/doc/bb_listContent_eg.html");
+    let _html = todo!();
     let soup = Soup::new(_html);
 
     let contents = soup
