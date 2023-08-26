@@ -2,73 +2,20 @@ use crate::{
     course_main_data::get_course_sidebar, memberships_data::MembershipsData, Course, CourseItem,
     CourseItemContent, User,
 };
+use nix::errno::Errno;
 use std::{collections::HashMap, time::Duration};
 use ureq::{Agent, AgentBuilder};
 
 const BB_BASE_URL: &str = "https://learn.uq.edu.au";
 
 pub trait BBClient {
-    fn get_courses(&self) -> Vec<Course>;
-    fn get_course_contents(&self, course: &Course) -> Vec<CourseItem>;
+    fn get_courses(&self) -> Result<Vec<Course>, Errno>;
+    fn get_course_contents(&self, course: &Course) -> Result<Vec<CourseItem>, Errno>;
 
-    fn get_directory_contents(&self, url: String) -> Vec<CourseItem>;
+    fn get_directory_contents(&self, url: String) -> Result<Vec<CourseItem>, Errno>;
 
-    fn get_item_size(&self, item: &CourseItem) -> usize;
-    fn get_item_contents(&mut self, item: &CourseItem) -> &[u8];
-}
-
-pub struct BBMockClient;
-
-impl BBClient for BBMockClient {
-    fn get_courses(&self) -> Vec<Course> {
-        vec![
-            Course {
-                short_name: "MATH2401".into(),
-                full_name: "[MATH2401] Real analysis".into(),
-                id: "".into(),
-            },
-            Course {
-                short_name: "MATH1072".into(),
-                full_name: "[MATH1072] Multivariate calculus".into(),
-                id: "".into(),
-            },
-            Course {
-                short_name: "STAT1301".into(),
-                full_name: "[STAT1301] Advanced analysis of scientific data".into(),
-                id: "".into(),
-            },
-            Course {
-                short_name: "COMP3506".into(),
-                full_name: "[COMP3506] Algorithms & data structures".into(),
-                id: "".into(),
-            },
-        ]
-    }
-
-    fn get_course_contents(&self, course: &Course) -> Vec<CourseItem> {
-        if course.short_name == "MATH2401" {
-            vec![CourseItem {
-                name: "Assignment 1".into(),
-                content: Some(CourseItemContent::FileUrl("https://learn.uq.edu.au/bbcswebdav/pid-9222876-dt-content-rid-56218459_1/xid-56218459_1".into())),
-                description: None,
-                attachments: vec![],
-            }]
-        } else {
-            vec![]
-        }
-    }
-
-    fn get_directory_contents(&self, _url: String) -> Vec<CourseItem> {
-        vec![]
-    }
-
-    fn get_item_size(&self, _item: &CourseItem) -> usize {
-        10
-    }
-
-    fn get_item_contents(&mut self, _item: &CourseItem) -> &[u8] {
-        "hellohello".as_bytes()
-    }
+    fn get_item_size(&self, item: &CourseItem) -> Result<usize, Errno>;
+    fn get_item_contents(&mut self, item: &CourseItem) -> Result<&[u8], Errno>;
 }
 
 pub enum BBPage {
@@ -138,18 +85,20 @@ impl BBAPIClient {
         }
     }
 
-    pub fn get_page(&self, page: BBPage) -> Result<String, BBClientError> {
+    pub fn get_page(&self, page: BBPage) -> Result<String, Errno> {
         Ok(self
             .agent
             .get(&page.url())
             .set("Cookie", &self.cookies)
-            .call()?
-            .into_string()?)
+            .call()
+            .map_err(|_| Errno::ENETRESET)? // TODO: Reach inside and check the error type
+            .into_string()
+            .map_err(|_| Errno::EIO)?)
     }
 
-    pub fn get_me(&self) -> Result<User, BBClientError> {
+    pub fn get_me(&self) -> Result<User, Errno> {
         let json = self.get_page(BBPage::Me)?;
-        Ok(serde_json::from_str(&json)?)
+        Ok(serde_json::from_str(&json).map_err(|_| Errno::EIO)?)
     }
 
     pub fn get_download_file_name(&self, url: &str) -> String {
@@ -165,44 +114,43 @@ impl BBAPIClient {
 }
 
 impl BBClient for BBAPIClient {
-    fn get_courses(&self) -> Vec<Course> {
-        let user_id = self.get_me().unwrap().id;
-        let json = self.get_page(BBPage::CourseList { user_id }).unwrap();
-        let memberships_data: MembershipsData = serde_json::from_str(&json).unwrap();
-        memberships_data
+    fn get_courses(&self) -> Result<Vec<Course>, Errno> {
+        let user_id = self.get_me()?.id;
+        let json = self.get_page(BBPage::CourseList { user_id })?;
+        let memberships_data: MembershipsData =
+            serde_json::from_str(&json).map_err(|_| Errno::EIO)?;
+        Ok(memberships_data
             .results
             .into_iter()
             .map(|course_entry| course_entry.into())
-            .collect()
+            .collect())
     }
 
-    fn get_course_contents(&self, course: &Course) -> Vec<CourseItem> {
-        let html = self
-            .get_page(BBPage::Course {
-                id: course.id.clone(),
-            })
-            .unwrap();
+    fn get_course_contents(&self, course: &Course) -> Result<Vec<CourseItem>, Errno> {
+        let html = self.get_page(BBPage::Course {
+            id: course.id.clone(),
+        })?;
         println!("{:?}", course.id);
-        get_course_sidebar(&html)
+        Ok(get_course_sidebar(&html)
             .unwrap_or_default()
             .into_iter()
             .map(|entry| entry.into())
-            .collect()
+            .collect())
     }
 
     /// url should be from a CourseItemContent::Folder
-    fn get_directory_contents(&self, url: String) -> Vec<CourseItem> {
-        let html = self.get_page(BBPage::Folder { url }).unwrap();
-        self.get_folder_contents(&html)
-            .unwrap()
+    fn get_directory_contents(&self, url: String) -> Result<Vec<CourseItem>, Errno> {
+        let html = self.get_page(BBPage::Folder { url })?;
+        Ok(self
+            .get_folder_contents(&html)
+            .map_err(|_| Errno::EIO)?
             .into_iter()
             .map(|entry| entry.into())
-            .collect()
+            .collect())
     }
 
-    fn get_item_size(&self, item: &CourseItem) -> usize {
-        // TODO remove unwraps
-        match &item.content {
+    fn get_item_size(&self, item: &CourseItem) -> Result<usize, Errno> {
+        Ok(match &item.content {
             Some(content) => match content {
                 CourseItemContent::FileUrl(url) => {
                     let url = &format!("{}{}", BB_BASE_URL, url);
@@ -211,12 +159,12 @@ impl BBClient for BBAPIClient {
                         .head(url)
                         .set("Cookie", &self.cookies)
                         .call()
-                        .unwrap();
+                        .map_err(|_| Errno::ENETRESET)?;
                     response
                         .header("Content-Length")
-                        .unwrap_or("0")
+                        .ok_or(Errno::EIO)?
                         .parse()
-                        .unwrap()
+                        .map_err(|_| Errno::EIO)?
                 }
                 //CourseItemContent::FolderUrl(_) => unreachable!(),
                 CourseItemContent::FolderUrl(_) => 0,
@@ -226,26 +174,28 @@ impl BBClient for BBAPIClient {
                 Some(desc) => desc.len(),
                 None => 0,
             },
-        }
+        })
     }
 
-    fn get_item_contents(&mut self, item: &CourseItem) -> &[u8] {
-        if self.cache.contains_key(&item) {
-            return &self.cache[&item];
+    fn get_item_contents(&mut self, item: &CourseItem) -> Result<&[u8], Errno> {
+        if self.cache.contains_key(item) {
+            return Ok(&self.cache[item]);
         }
-        // TODO remove unwraps
         let bytes = match &item.content {
             Some(content) => match content {
                 CourseItemContent::FileUrl(url) => {
                     let url = &format!("{}{}", BB_BASE_URL, url);
                     let response = self
                         .agent
-                        .get(&url)
+                        .get(url)
                         .set("Cookie", &self.cookies)
                         .call()
-                        .unwrap();
+                        .map_err(|_| Errno::ENETRESET)?; // TODO: Reach inside and check the error type
                     let mut bytes = Vec::new();
-                    response.into_reader().read_to_end(&mut bytes).unwrap();
+                    response
+                        .into_reader()
+                        .read_to_end(&mut bytes)
+                        .map_err(|e| e.raw_os_error().map(Errno::from_i32).unwrap_or(Errno::EIO))?;
                     bytes
                 }
                 //CourseItemContent::FolderUrl(_) => unreachable!(),
@@ -258,7 +208,7 @@ impl BBClient for BBAPIClient {
             },
         };
         self.cache.insert(item.clone(), bytes);
-        self.cache.get(&item).unwrap()
+        Ok(self.cache[item].as_slice())
     }
 }
 
