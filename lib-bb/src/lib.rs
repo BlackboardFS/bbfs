@@ -40,7 +40,7 @@ pub struct CourseItem {
     pub name: String,
     pub content: Option<CourseItemContent>,
     pub description: Option<String>,
-    pub attachments: Vec<CourseItem>,
+    pub attachments: Vec<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -71,14 +71,7 @@ impl From<list_content_data::Content> for CourseItem {
         let name = value.title;
         let content = value.link.clone().map(CourseItemContent::from_url);
         let description = value.description;
-        let attachments = value.attachments.into_iter().map(|url| {
-            CourseItem {
-                name: url.clone(),
-                content: Some(CourseItemContent::FileUrl(url)),
-                description: None,
-                attachments: vec![],
-            }
-        }).collect();
+        let attachments = value.attachments;
 
         CourseItem {
             name,
