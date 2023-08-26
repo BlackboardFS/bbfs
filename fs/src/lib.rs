@@ -165,6 +165,8 @@ impl<Client: BBClient> BBFS<Client> {
                 );
             }
 
+            self.items.get_mut(&inode).unwrap().children = Some(inodes.clone());
+
             inodes
         };
 
