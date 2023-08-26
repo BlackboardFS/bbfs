@@ -1,9 +1,8 @@
 use std::fs::File;
-use std::io::{BufReader, Write};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use argh::FromArgs;
-use cookie_store::{Cookie, CookieStore};
 use daemonize_me::Daemon;
 use etcetera::BaseStrategy;
 use fuser::MountOption;
@@ -15,6 +14,7 @@ use lib_bb::client::BBAPIClient;
 #[derive(FromArgs)]
 /// A CLI tool to authenticate to and mount BlackboardFS
 struct BbfsCli {
+    /// runs fs service in foreground
     #[argh(switch, short = 'm')]
     monitor: bool,
     /// the path to mount the Blackboard filesystem at
@@ -89,6 +89,7 @@ fn find_cookies(cookie_file: &Path, bb_url: &Url) -> Option<String> {
         .and_then(|cookie| cookie_valid(&cookie, bb_url).then_some(cookie))
         .or_else(|| {
             let cookie = cookie_monster::eat_user_cookies()
+                .expect("cookie monster failed")
                 .into_iter()
                 .reduce(|mut megacookie, cookie| {
                     megacookie.push(';');
@@ -96,6 +97,7 @@ fn find_cookies(cookie_file: &Path, bb_url: &Url) -> Option<String> {
                     megacookie
                 })
                 .unwrap_or_default();
+
             cookie_valid(&cookie, bb_url).then(move || {
                 if let Ok(mut file) = File::create(cookie_file) {
                     if file.write_all(cookie.as_bytes()).is_err() {

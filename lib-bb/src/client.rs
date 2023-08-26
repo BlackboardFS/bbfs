@@ -131,7 +131,11 @@ impl BBAPIClient {
             .timeout_read(Duration::from_secs(5))
             .timeout_write(Duration::from_secs(5))
             .build();
-        Self { cookies, agent, cache: HashMap::new() }
+        Self {
+            cookies,
+            agent,
+            cache: HashMap::new(),
+        }
     }
 
     pub fn get_page(&self, page: BBPage) -> Result<String, BBClientError> {
@@ -177,9 +181,9 @@ impl BBClient for BBAPIClient {
 
     /// url should be from a CourseItemContent::Folder
     fn get_directory_contents(&self, url: String) -> Vec<CourseItem> {
-        let html = self.get_page(BBPage::Folder { url }).unwrap();
+        let html = self.get_page(BBPage::Folder { url: url.clone() }).unwrap();
         get_folder_contents(&html)
-            .unwrap()
+            .expect(&format!("Failed to get folder contents {url}"))
             .into_iter()
             .map(|entry| entry.into())
             .collect()
