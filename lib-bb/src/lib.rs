@@ -14,6 +14,7 @@ use serde::Deserialize;
 
 pub mod client;
 mod course_main_data;
+mod list_content_data;
 mod http;
 mod ultra_data;
 
