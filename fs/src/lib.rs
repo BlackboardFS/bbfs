@@ -99,6 +99,54 @@ impl<Client: BBClient> BBFS<Client> {
         self.courses.get(&inode)
     }
 
+    #[cfg(target_os = "linux")]
+    fn create_hyperlink_item(&mut self, hyperlink: String) -> u64 {
+        let inode = self.get_free_inode();
+        self.items.insert(
+            inode,
+            CourseItemInode {
+                item: CourseItem {
+                    name: "Blackboard.desktop".to_owned(),
+                    file_name: None,
+                    content: None,
+                    description: Some(format!(
+                        "\
+[Desktop Entry]
+Encoding=UTF-8
+Type=Link
+URL=https://learn.uq.edu.au{hyperlink}
+Icon=text-html
+"
+                    )),
+                    attachments: vec![],
+                },
+                children: Some(vec![]),
+            },
+        );
+        inode
+    }
+
+    #[cfg(target_os = "macos")]
+    fn create_hyperlink_item(&mut self, hyperlink: String) -> u64 {
+        let inode = self.get_free_inode();
+        self.items.insert(
+            inode,
+            CourseItemInode {
+                item: CourseItem {
+                    name: "Blackboard.webloc".to_owned(),
+                    file_name: None,
+                    content: None,
+                    description: Some(format!(
+                        r#"{ URL = "https://learn.uq.edu.au{hyperlink}"; }"#
+                    )),
+                    attachments: vec![],
+                },
+                children: Some(vec![]),
+            },
+        );
+        inode
+    }
+
     fn course_items(&mut self, course_inode: u64) -> Result<Option<Vec<(u64, CourseItem)>>, Errno> {
         let course = match self.course(course_inode) {
             Some(course) => course,
@@ -109,6 +157,8 @@ impl<Client: BBClient> BBFS<Client> {
             items.clone()
         } else {
             let mut inodes = Vec::new();
+            let course_id = course.course.id.clone(); // TODO: Shouldn't really be clone but lifetimes
+
             for item in self.client.get_course_contents(&course.course)?.into_iter() {
                 let inode = self.get_free_inode();
                 self.items.insert(
@@ -120,6 +170,10 @@ impl<Client: BBClient> BBFS<Client> {
                 );
                 inodes.push(inode);
             }
+
+            inodes.push(
+                self.create_hyperlink_item(format!("/ultra/courses/{}/cl/outline", course_id)),
+            );
 
             self.courses.get_mut(&course_inode).unwrap().items = Some(inodes.clone());
 
@@ -151,10 +205,11 @@ impl<Client: BBClient> BBFS<Client> {
         let inodes = if let Some(children) = &item.children {
             children.clone()
         } else {
-            let contents = match item.item.content.clone() {
-                Some(CourseItemContent::FolderUrl(url)) => {
-                    self.client.get_directory_contents(url)?
-                }
+            let (url, contents) = match item.item.content {
+                Some(CourseItemContent::FolderUrl(ref url)) => (
+                    url.clone(),
+                    self.client.get_directory_contents(url.clone())?,
+                ),
                 _ => return Ok(None),
             };
 
@@ -171,6 +226,8 @@ impl<Client: BBClient> BBFS<Client> {
                     },
                 );
             }
+
+            inodes.push(self.create_hyperlink_item(url));
 
             self.items.get_mut(&inode).unwrap().children = Some(inodes.clone());
 
@@ -299,11 +356,11 @@ impl<Client: BBClient> Filesystem for BBFS<Client> {
                 .client
                 .get_item_contents(&item.clone())
                 .and_then(|contents| {
-                    let end_offset = end_offset.min(contents.len());
-                    contents.get(offset as usize..end_offset).ok_or(Errno::EIO)
-                })
-            {
-                Ok(contents) => reply.data(&contents),
+                    contents
+                        .get(offset..end_offset.min(contents.len()))
+                        .ok_or(Errno::EIO)
+                }) {
+                Ok(contents) => reply.data(contents),
                 Err(errno) => {
                     reply.error(errno as _);
                     return;

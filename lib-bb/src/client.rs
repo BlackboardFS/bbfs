@@ -103,11 +103,7 @@ impl BBAPIClient {
 
     pub fn get_download_file_name(&self, url: &str) -> anyhow::Result<String> {
         let url = &format!("{}{}", BB_BASE_URL, url);
-        let response = self
-            .agent
-            .head(url)
-            .set("Cookie", &self.cookies)
-            .call()?;
+        let response = self.agent.head(url).set("Cookie", &self.cookies).call()?;
         Ok(response.get_url().split('/').last().unwrap().into())
     }
 }
@@ -200,7 +196,7 @@ impl BBClient for BBAPIClient {
                 }
                 //CourseItemContent::FolderUrl(_) => unreachable!(),
                 CourseItemContent::FolderUrl(_) => vec![],
-                CourseItemContent::Link(url) => url.bytes().collect(),
+                CourseItemContent::Link(url) => url.bytes().collect(), // TODO: Convert to .webloc or .desktop
             },
             None => match &item.description {
                 Some(desc) => desc.bytes().collect(),
