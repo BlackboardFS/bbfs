@@ -1,6 +1,6 @@
 use crate::{
-    course_main_data::get_course_sidebar, memberships_data::MembershipsData, Course, CourseItem,
-    CourseItemContent, User,
+    course_main_data::get_course_sidebar, list_content_data::get_folder_contents,
+    memberships_data::MembershipsData, Course, CourseItem, CourseItemContent, User,
 };
 use std::time::Duration;
 use ureq::{Agent, AgentBuilder};
@@ -10,6 +10,8 @@ const BB_BASE_URL: &str = "https://learn.uq.edu.au";
 pub trait BBClient {
     fn get_courses(&self) -> Vec<Course>;
     fn get_course_contents(&self, course: &Course) -> Vec<CourseItem>;
+
+    fn get_directory_contents(&self, url: String) -> Vec<CourseItem>;
 
     fn get_item_size(&self, item: &CourseItem) -> usize;
     fn get_item_contents(&self, item: &CourseItem) -> Vec<u8>;
@@ -55,6 +57,10 @@ impl BBClient for BBMockClient {
         }
     }
 
+    fn get_directory_contents(&self, _url: String) -> Vec<CourseItem> {
+        vec![]
+    }
+
     fn get_item_size(&self, _item: &CourseItem) -> usize {
         10
     }
@@ -68,6 +74,7 @@ pub enum BBPage {
     Me,
     CourseList { user_id: String },
     Course { id: String },
+    Folder { url: String },
 }
 
 impl BBPage {
@@ -77,6 +84,9 @@ impl BBPage {
             Self::CourseList { user_id } => format!("/learn/api/v1/users/{user_id}/memberships?expand=course.effectiveAvailability,course.permissions,courseRole&includeCount=true&limit=10000"),
             Self::Course { id } => {
                 format!("/webapps/blackboard/execute/announcement?method=search&course_id={id}")
+            }
+            Self::Folder { url } => {
+                format!("{}{}", BB_BASE_URL, url)
             }
         };
         format!("{BB_BASE_URL}{path}")
@@ -156,6 +166,16 @@ impl BBClient for BBAPIClient {
             })
             .unwrap();
         get_course_sidebar(&html)
+            .unwrap()
+            .into_iter()
+            .map(|entry| entry.into())
+            .collect()
+    }
+
+    /// url should be from a CourseItemContent::Folder
+    fn get_directory_contents(&self, url: String) -> Vec<CourseItem> {
+        let html = self.get_page(BBPage::Folder { url }).unwrap();
+        get_folder_contents(&html)
             .unwrap()
             .into_iter()
             .map(|entry| entry.into())

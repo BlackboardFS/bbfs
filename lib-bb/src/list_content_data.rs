@@ -12,7 +12,7 @@ pub struct Content {
     pub attachments: Vec<String>,
 }
 
-fn get_folder_contents(html: &str) -> anyhow::Result<Vec<Content>> {
+pub fn get_folder_contents(html: &str) -> anyhow::Result<Vec<Content>> {
     // https://learn.uq.edu.au/webapps/blackboard/content/listContent.jsp?course_id={course_id}&content_id={content_id}&mode=reset
     let soup = Soup::new(html);
 
