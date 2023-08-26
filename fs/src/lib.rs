@@ -72,7 +72,7 @@ impl<Client: BBClient> BBFS<Client> {
             courses: HashMap::new(),
             items: HashMap::new(),
         };
-        bbfs.populate_courses();
+        bbfs.populate_courses().unwrap();
         bbfs
     }
 

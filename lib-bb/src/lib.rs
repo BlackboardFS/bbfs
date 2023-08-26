@@ -149,7 +149,7 @@ Icon=text-html
 
 #[cfg(target_os = "macos")]
 pub fn create_link_file(hyperlink: &str) -> String {
-    format!(r#"{ URL = "https://learn.uq.edu.au{hyperlink}"; }"#)
+    format!("{{ URL = \"https://learn.uq.edu.au{hyperlink}\"; }}")
 }
 
 #[cfg(target_os = "macos")]

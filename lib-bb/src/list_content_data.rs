@@ -44,14 +44,6 @@ impl BBAPIClient {
                     .find()
                     .map(|elem| elem.text());
 
-                let file_name = link
-                    .as_ref()
-                    .and_then(|l| {
-                        file.is_match(l)
-                            .then(|| self.get_download_file_name(l).ok())
-                    })
-                    .flatten();
-
                 let icon = elem
                     .tag("img")
                     .attr("class", "item_icon")
@@ -60,12 +52,21 @@ impl BBAPIClient {
                     .get("src")
                     .ok_or(anyhow!("Icon had no src tag"))?;
 
-                let attachments = elem
+                let attachments: Vec<_> = elem
                     .tag("span")
                     .attr("class", "contextMenuContainer")
                     .find_all()
                     .filter_map(|elem| elem.get("bb:menuGeneratorUrl"))
                     .collect();
+
+                let file_name = if link.clone().is_some_and(|l| file.is_match(&l)) {
+                    self.get_download_file_name(link.as_ref().unwrap()).ok()
+                } else if attachments.is_empty() && link.is_none() {
+                    println!("Adding txt");
+                    Some(format!("{title}.txt"))
+                } else {
+                    None
+                };
 
                 Ok(Content {
                     title,
