@@ -87,7 +87,7 @@ impl BBPage {
                 format!("/webapps/blackboard/execute/announcement?method=search&course_id={id}")
             }
             Self::Folder { url } => {
-                format!("{}{}", BB_BASE_URL, url)
+                url.clone()
             }
         };
         format!("{BB_BASE_URL}{path}")
@@ -218,9 +218,10 @@ impl BBClient for BBAPIClient {
         match &item.content {
             Some(content) => match content {
                 CourseItemContent::FileUrl(url) => {
+                    let url = &format!("{}{}", BB_BASE_URL, url);
                     let response = self
                         .agent
-                        .head(&url)
+                        .get(&url)
                         .set("Cookie", &self.cookies)
                         .call()
                         .unwrap();
