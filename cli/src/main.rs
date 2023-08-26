@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 
 use argh::FromArgs;
 use cookie_store::{Cookie, CookieStore};
+use daemonize_me::Daemon;
 use etcetera::BaseStrategy;
 use fuser::MountOption;
 use url::Url;
@@ -14,6 +15,8 @@ use lib_bb::client::BBAPIClient;
 #[derive(FromArgs)]
 /// A CLI tool to authenticate to and mount BlackboardFS
 struct BbfsCli {
+    #[argh(switch, short = 'm')]
+    monitor: bool,
     /// the path to mount the Blackboard filesystem at
     #[argh(positional)]
     mount_point: PathBuf,
@@ -21,6 +24,7 @@ struct BbfsCli {
 
 fn main() -> anyhow::Result<()> {
     let args: BbfsCli = argh::from_env();
+    let mount_point = args.mount_point.canonicalize().unwrap();
 
     let strategy = etcetera::choose_base_strategy().unwrap();
     let data_dir = {
@@ -31,16 +35,24 @@ fn main() -> anyhow::Result<()> {
     };
 
     let cookie_file = data_dir.join("cookie");
+    let stdout =
+        File::create(data_dir.join("stdout.log")).expect("failed to create stdout log file");
+    let stderr =
+        File::create(data_dir.join("stderr.log")).expect("failed to create stderr log file");
 
     let bb_url = Url::parse("https://learn.uq.edu.au/").unwrap();
 
     let cookies = find_cookies(&cookie_file, &bb_url).unwrap();
 
+    if !args.monitor {
+        Daemon::new().stdout(stdout).stderr(stderr).start().unwrap();
+    }
+
     let client = BBAPIClient::new(cookies);
     fuser::mount2(
         BBFS::new(client),
-        &args.mount_point,
-        &[MountOption::AutoUnmount],
+        mount_point,
+        &[MountOption::AutoUnmount, MountOption::RO],
     )
     .unwrap();
     Ok(())

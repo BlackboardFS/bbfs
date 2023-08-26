@@ -8,6 +8,7 @@ anyhow = "1.0.75"
 argh = "0.1.12"
 cookie-monster = { path = "../cookie-monster" }
 cookie_store = "^0.19"
+daemonize-me = "2.0.1"
 etcetera = "0.8.0"
 fs = { path = "../fs" }
 fuser = "0.13.0"
