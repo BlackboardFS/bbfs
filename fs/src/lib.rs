@@ -298,7 +298,10 @@ impl<Client: BBClient> Filesystem for BBFS<Client> {
             match self
                 .client
                 .get_item_contents(&item.clone())
-                .and_then(|contents| contents.get(offset as usize..end_offset).ok_or(Errno::EIO))
+                .and_then(|contents| {
+                    let end_offset = end_offset.min(contents.len());
+                    contents.get(offset as usize..end_offset).ok_or(Errno::EIO)
+                })
             {
                 Ok(contents) => reply.data(&contents),
                 Err(errno) => {
@@ -322,7 +325,9 @@ impl<Client: BBClient> Filesystem for BBFS<Client> {
         println!("readdir(ino={ino}, offset={offset})");
 
         let mut entries = vec![];
-        entries.push((ino, FileType::Directory, ".".into()));
+        if offset == 0 {
+            entries.push((ino, FileType::Directory, ".".into()));
+        }
         if ino == 1 {
             entries.push((1, FileType::Directory, "..".into()));
 
