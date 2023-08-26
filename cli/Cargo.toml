@@ -3,6 +3,13 @@ name = "cli"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
+anyhow = "1.0.75"
+argh = "0.1.12"
+cookie-monster = { path = "../cookie-monster" }
+cookie_store = "^0.19"
+etcetera = "0.8.0"
+serde = { version = "1.0.187", features = ["derive"] }
+serde_json = "1.0.105"
+ureq = { version = "2.7.1", features = ["cookies"] }
+url = "2.4.0"

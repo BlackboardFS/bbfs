@@ -40,7 +40,6 @@ pub fn eat_user_cookies() -> Vec<String> {
                     let mut stored_cookies = cookies_send_internal.lock().unwrap();
                     for mut cookie in cookies.unwrap() {
                         stored_cookies.push(cookie.to_cookie_header().unwrap().as_str().to_owned());
-                        eprintln!("Cookie: {}", cookie.to_cookie_header().unwrap().as_str());
                     }
                     gtk::main_quit();
                 },
