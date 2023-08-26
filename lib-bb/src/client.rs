@@ -2,7 +2,7 @@ use crate::{
     course_main_data::get_course_sidebar, list_content_data::get_folder_contents,
     memberships_data::MembershipsData, Course, CourseItem, CourseItemContent, User,
 };
-use std::time::Duration;
+use std::{collections::HashMap, time::Duration};
 use ureq::{Agent, AgentBuilder};
 
 const BB_BASE_URL: &str = "https://learn.uq.edu.au";
@@ -14,7 +14,7 @@ pub trait BBClient {
     fn get_directory_contents(&self, url: String) -> Vec<CourseItem>;
 
     fn get_item_size(&self, item: &CourseItem) -> usize;
-    fn get_item_contents(&self, item: &CourseItem) -> Vec<u8>;
+    fn get_item_contents(&mut self, item: &CourseItem) -> &[u8];
 }
 
 pub struct BBMockClient;
@@ -66,8 +66,8 @@ impl BBClient for BBMockClient {
         10
     }
 
-    fn get_item_contents(&self, _item: &CourseItem) -> Vec<u8> {
-        "hellohello".into()
+    fn get_item_contents(&mut self, _item: &CourseItem) -> &[u8] {
+        "hellohello".as_bytes()
     }
 }
 
@@ -97,6 +97,7 @@ impl BBPage {
 pub struct BBAPIClient {
     cookies: String,
     agent: Agent,
+    cache: HashMap<CourseItem, Vec<u8>>,
 }
 
 #[derive(Debug)]
@@ -130,7 +131,7 @@ impl BBAPIClient {
             .timeout_read(Duration::from_secs(5))
             .timeout_write(Duration::from_secs(5))
             .build();
-        Self { cookies, agent }
+        Self { cookies, agent, cache: HashMap::new() }
     }
 
     pub fn get_page(&self, page: BBPage) -> Result<String, BBClientError> {
@@ -213,9 +214,12 @@ impl BBClient for BBAPIClient {
         }
     }
 
-    fn get_item_contents(&self, item: &CourseItem) -> Vec<u8> {
+    fn get_item_contents(&mut self, item: &CourseItem) -> &[u8] {
+        if self.cache.contains_key(&item) {
+            return &self.cache[&item];
+        }
         // TODO remove unwraps
-        match &item.content {
+        let bytes = match &item.content {
             Some(content) => match content {
                 CourseItemContent::FileUrl(url) => {
                     let url = &format!("{}{}", BB_BASE_URL, url);
@@ -237,7 +241,9 @@ impl BBClient for BBAPIClient {
                 Some(desc) => desc.bytes().collect(),
                 None => vec![],
             },
-        }
+        };
+        self.cache.insert(item.clone(), bytes);
+        self.cache.get(&item).unwrap()
     }
 }
 

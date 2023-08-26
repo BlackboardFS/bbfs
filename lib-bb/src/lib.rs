@@ -35,7 +35,7 @@ impl From<memberships_data::CourseEntry> for Course {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct CourseItem {
     pub name: String,
     pub content: Option<CourseItemContent>,
@@ -43,7 +43,7 @@ pub struct CourseItem {
     pub attachments: Vec<String>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum CourseItemContent {
     FileUrl(String),
     FolderUrl(String),

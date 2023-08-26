@@ -272,7 +272,7 @@ impl<Client: BBClient> Filesystem for BBFS<Client> {
             // TODO: Cache item contents
             let offset = offset as usize;
             let end_offset = offset + (size as usize);
-            reply.data(&self.client.get_item_contents(item)[offset as usize..end_offset])
+            reply.data(&self.client.get_item_contents(&item.clone())[offset as usize..end_offset])
         } else {
             reply.error(ENOENT);
         }
