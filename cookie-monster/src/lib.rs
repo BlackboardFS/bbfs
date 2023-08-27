@@ -5,11 +5,9 @@
 extern crate objc;
 
 use std::{
-    cell::RefCell,
     fs::File,
     io::Write,
     path::{Path, PathBuf},
-    sync::mpsc,
     time::{Duration, Instant},
 };
 

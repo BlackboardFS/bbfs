@@ -38,7 +38,7 @@ impl BBAPIClient {
                             })
                             .collect()
                     })
-                    .filter(|url| !url.starts_with("#"))
+                    .filter(|url| !url.starts_with('#'))
                     .collect();
 
                 let title_elem = elem
@@ -89,7 +89,7 @@ impl BBAPIClient {
                 let title = re.replace_all(&title, r"-").into();
                 let file_name = file_name.map(|file_name| re.replace_all(&file_name, r"-").into());
 
-                if attachments.len() == 1 && link == None {
+                if attachments.len() == 1 && link.is_none() {
                     let file_name = self.get_download_file_name(&attachments[0])?;
                     Ok(Content {
                         title: file_name.clone(),
