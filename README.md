@@ -58,6 +58,36 @@ your file browser!
 As a bonus, browsing the filesystem is significantly faster than browsing the Blackboard web UI,
 which is very helpful when you're stuck on slow campus WiFi.
 
+## Requirements
+
+### macOS
+
+BlackboardFS requires [macFUSE](https://osxfuse.github.io/) be installed on your system.
+
+### Linux
+
+The auth window requires GTK3, WebKitGTK, and related libraries be installed on your system.
+Additionally, to mount the filesystem, FUSE3 is required.
+Make sure the following packages are installed:
+
+#### Debian/Ubuntu
+
+```
+sudo apt install libwebkit2gtk-4.1-dev libfuse3-dev
+```
+
+#### Fedora
+
+```
+sudo dnf install gtk3-devel webkit2gtk4.1-devel fuse3-devel
+```
+
+#### Arch/Manjaro
+
+```
+sudo pacman -S webkit2gtk-4.1 fuse3
+```
+
 ## Usage
 
 This is a FUSE-based filesystem. To mount:
