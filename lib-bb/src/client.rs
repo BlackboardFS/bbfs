@@ -117,7 +117,6 @@ impl BBClient for BBAPIClient {
 
     /// url should be from a CourseItemContent::Folder
     fn get_directory_contents(&self, url: String) -> Result<Vec<CourseItem>, Errno> {
-        println!("{url}");
         let html = self.get_page(BBPage::Folder { url })?;
         Ok(self
             .get_folder_contents(&html)
