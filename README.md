@@ -98,7 +98,7 @@ bbfs <mount_point>
 
 This will spawn a browser window for you to log in with your UQ login. **WE ARE ABLE TO INJECT
 ARBITRARY CODE INTO THIS BROWSER WINDOW, SO MAKE SURE YOU READ AND UNDERSTAND OUR CODE TO MAKE SURE
-WE'RE NOT STEALING YOUR CREDENTIALS** (the relavant code is in `cookie_monster/`; everything else
+WE'RE NOT STEALING YOUR CREDENTIALS** (the relevant code is in `cookie_monster/`; everything else
 only gets a session token).
 
 To unmount the filesystem:
