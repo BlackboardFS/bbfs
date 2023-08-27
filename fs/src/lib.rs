@@ -274,17 +274,17 @@ impl<Client: BBClient> BBFS<Client> {
     }
 
     fn file_type(item: &CourseItemInode) -> FileType {
-        if !item.item.attachments.is_empty()
-            && matches!(item.ty, CourseItemInodeType::AttachmentFolder)
-        {
-            FileType::Directory
-        } else {
-            match item.item.content {
+        match item.ty {
+            CourseItemInodeType::AttachmentFolder => FileType::Directory,
+            CourseItemInodeType::DescriptionFile | CourseItemInodeType::BlackboardLinkFile => {
+                FileType::RegularFile
+            }
+            _ => match item.item.content {
                 Some(CourseItemContent::FileUrl(_)) => FileType::RegularFile,
                 Some(CourseItemContent::Link(_)) => FileType::RegularFile,
                 Some(CourseItemContent::FolderUrl(_)) => FileType::Directory,
                 None => FileType::RegularFile,
-            }
+            },
         }
     }
 }
