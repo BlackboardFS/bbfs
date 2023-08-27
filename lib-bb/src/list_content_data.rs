@@ -27,6 +27,20 @@ impl BBAPIClient {
             .ok_or(anyhow!("There was no contentList"))?
             .children()
             .map(|elem| {
+                let attachments: Vec<_> = elem
+                    .attr("class", "attachments")
+                    .find_all()
+                    .flat_map(|elem| -> Vec<String> {
+                        elem.tag("li")
+                            .find_all()
+                            .filter_map(|elem| {
+                                elem.tag("a").find().and_then(|link| link.get("href"))
+                            })
+                            .collect()
+                    })
+                    .filter(|url| !url.starts_with("#"))
+                    .collect();
+
                 let title_elem = elem
                     .tag("h3")
                     .find()
@@ -57,20 +71,6 @@ impl BBAPIClient {
                     .get("src")
                     .ok_or(anyhow!("Icon had no src tag"))?;
 
-                let attachments: Vec<_> = elem
-                    .attr("class", "attachments")
-                    .find_all()
-                    .flat_map(|elem| -> Vec<String> {
-                        elem.tag("li")
-                            .find_all()
-                            .filter_map(|elem| {
-                                elem.tag("a").find().and_then(|link| link.get("href"))
-                            })
-                            .collect()
-                    })
-                    .filter(|url| !url.starts_with("#"))
-                    .collect();
-
                 let file_name = if link.clone().is_some_and(|l| file.is_match(&l)) {
                     self.get_download_file_name(link.as_ref().unwrap()).ok()
                 } else if attachments.is_empty() && link.is_none() {
@@ -79,14 +79,26 @@ impl BBAPIClient {
                     None
                 };
 
-                Ok(Content {
-                    title,
-                    link,
-                    description,
-                    file_name,
-                    icon,
-                    attachments,
-                })
+                if attachments.len() == 1 && link == None {
+                    let file_name = self.get_download_file_name(&attachments[0])?;
+                    Ok(Content {
+                        title: file_name.clone(),
+                        link: Some(attachments[0].clone()),
+                        description,
+                        file_name: Some(file_name),
+                        icon,
+                        attachments: vec![],
+                    })
+                } else {
+                    Ok(Content {
+                        title,
+                        link,
+                        description,
+                        file_name,
+                        icon,
+                        attachments,
+                    })
+                }
             })
             .filter(|r| r.is_ok())
             .collect::<anyhow::Result<Vec<_>>>()
