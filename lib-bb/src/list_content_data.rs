@@ -60,6 +60,10 @@ impl BBAPIClient {
                         let re = Regex::new("(?s)<script.*?>.*?</script>").unwrap();
                         let html = elem.display();
                         let html = re.replace_all(&html, "");
+                        let re = Regex::new("<br></br>").unwrap();
+                        let html = re.replace_all(&html, "\n");
+                        let re = Regex::new("<br>").unwrap();
+                        let html = re.replace_all(&html, "\n");
                         Soup::new(&html).text().trim().into()
                     });
 
