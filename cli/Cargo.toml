@@ -3,6 +3,10 @@ name = "cli"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "bbfs"
+path = "src/main.rs"
+
 [dependencies]
 anyhow = "1.0.75"
 argh = "0.1.12"
