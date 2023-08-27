@@ -26,6 +26,7 @@ use anyhow::anyhow;
 
 #[derive(Debug)]
 enum UserEvent {
+    PageLoad(String),
     Navigation(String),
     GotCookie(String),
 }
@@ -33,6 +34,7 @@ enum UserEvent {
 pub fn eat_user_cookies(context_data_dir: PathBuf, cookie_file: &Path) -> anyhow::Result<String> {
     let mut event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
     let proxy = event_loop.create_proxy();
+    let load_proxy = event_loop.create_proxy();
     let cookie_proxy = event_loop.create_proxy();
     let window = WindowBuilder::new()
         .with_title("Blackboard Authentication")
@@ -49,6 +51,13 @@ pub fn eat_user_cookies(context_data_dir: PathBuf, cookie_file: &Path) -> anyhow
                     .send_event(UserEvent::Navigation(uri.clone()))
                     .expect("event loop should be open");
                 true
+            })
+            .with_on_page_load_handler(move |event, uri| {
+                if matches!(event, wry::webview::PageLoadEvent::Finished) {
+                    load_proxy
+                        .send_event(UserEvent::PageLoad(uri.clone()))
+                        .expect("event loop should be open");
+                }
             })
             .build()?,
     );
@@ -79,6 +88,15 @@ pub fn eat_user_cookies(context_data_dir: PathBuf, cookie_file: &Path) -> anyhow
                 ..
             } => {
                 finish_time = Some(Instant::now() + Duration::from_secs(2));
+            }
+            Event::UserEvent(UserEvent::PageLoad(url)) => {
+                if url.starts_with("https://auth.uq.edu.au/idp/module.php/core/loginuserpass.php?AuthState") {
+                    println!("Executing custom javascript");
+                    webview.as_ref()
+                        .expect("WebView should still be alive if we're navigating in it")
+                        .evaluate_script(r#"if (document.getElementsByClassName("sign-on__form-error").length == 0) { document.getElementsByClassName("sign-on__content")[0].children[0].innerHTML = "<span style=\"background-color: red; color: white; width: 100%; font-weight: bold; padding: 10px; display: block; text-align: center\">We just injected custom JavaScript into this web browser. We could steal your credentials. Make sure you have read and understand our code.</span>" }"#)
+                        .unwrap();
+                }
             }
             Event::UserEvent(UserEvent::Navigation(url)) => {
                 if url == "https://learn.uq.edu.au/ultra" {
