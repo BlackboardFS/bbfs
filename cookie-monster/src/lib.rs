@@ -1,5 +1,3 @@
-#![feature(fn_traits)]
-
 #[cfg(target_os = "macos")]
 #[macro_use]
 extern crate objc;
