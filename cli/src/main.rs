@@ -89,8 +89,8 @@ fn find_cookies(cookie_file: &Path, wry_data_dir: PathBuf, bb_url: &Url) -> Opti
         .ok()
         .and_then(|cookie| cookie_valid(&cookie, bb_url).then_some(cookie))
         .or_else(|| {
-            let cookie =
-                cookie_monster::eat_user_cookies(wry_data_dir).expect("cookie monster failed");
+            let cookie = cookie_monster::eat_user_cookies(wry_data_dir, cookie_file)
+                .expect("cookie monster failed");
 
             cookie_valid(&cookie, bb_url).then(move || {
                 if let Ok(mut file) = File::create(cookie_file) {

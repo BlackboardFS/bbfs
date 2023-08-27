@@ -480,9 +480,12 @@ name = "cookie-monster"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "block",
  "cookie",
  "gio",
  "gtk",
+ "objc",
+ "objc-foundation",
  "webkit2gtk",
  "wry",
 ]
@@ -1806,6 +1809,17 @@ checksum = "915b1b472bc21c53464d6c8461c9d3af805ba1ef837e1cac254428f4a77177b1"
 dependencies = [
  "malloc_buf",
  "objc_exception",
+]
+
+[[package]]
+name = "objc-foundation"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1add1b659e36c9607c7aab864a76c7a4c2760cd0cd2e120f3fb8b952c7e22bf9"
+dependencies = [
+ "block",
+ "objc",
+ "objc_id",
 ]
 
 [[package]]

@@ -1,5 +1,14 @@
+#![feature(fn_traits)]
+
+#[cfg(target_os = "macos")]
+#[macro_use]
+extern crate objc;
+
 use std::{
-    path::PathBuf,
+    cell::RefCell,
+    fs::File,
+    io::Write,
+    path::{Path, PathBuf},
     sync::mpsc,
     time::{Duration, Instant},
 };
@@ -15,13 +24,15 @@ use wry::{
     webview::{WebContext, WebView, WebViewBuilder},
 };
 
+use anyhow::anyhow;
+
 #[derive(Debug)]
 enum UserEvent {
     Navigation(String),
     GotCookie(String),
 }
 
-pub fn eat_user_cookies(context_data_dir: PathBuf) -> anyhow::Result<String> {
+pub fn eat_user_cookies(context_data_dir: PathBuf, cookie_file: &Path) -> anyhow::Result<String> {
     let mut event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
     let proxy = event_loop.create_proxy();
     let cookie_proxy = event_loop.create_proxy();
@@ -44,7 +55,6 @@ pub fn eat_user_cookies(context_data_dir: PathBuf) -> anyhow::Result<String> {
             .build()?,
     );
 
-    let (cookie_send, cookie_recv) = mpsc::channel();
     let mut finish_time = None;
 
     event_loop.run_return(move |event, _, control_flow| {
@@ -71,40 +81,43 @@ pub fn eat_user_cookies(context_data_dir: PathBuf) -> anyhow::Result<String> {
                 ..
             } => {
                 finish_time = Some(Instant::now() + Duration::from_secs(2));
-                println!("Window destroyed");
             }
             Event::UserEvent(UserEvent::Navigation(url)) => {
-                println!("{url}");
                 if url == "https://learn.uq.edu.au/ultra" {
+                    finish_time = Some(Instant::now() + Duration::from_secs(2));
                     extract_cookies_from_webview(
                         webview
                             .as_ref()
                             .expect("WebView should still be alive if we're navigating in it"),
                         cookie_proxy.clone(),
+                        cookie_file,
                     );
+                } else if url == "https://macos-done/" {
+                    drop(webview.take().expect("WebView should only be dropped once"))
                 }
             }
-            Event::UserEvent(UserEvent::GotCookie(got_cookie)) => {
-                println!("{got_cookie}");
-                cookie_send
-                    .send(got_cookie)
-                    .expect("channel should not be closed");
-                drop(
-                    webview
-                        .take()
-                        .expect("WebView should only be dropped once?"),
-                );
+            Event::UserEvent(UserEvent::GotCookie(cookie)) => {
+                // Only Linux gets here
+                if let Ok(mut file) = File::create(cookie_file) {
+                    if file.write_all(cookie.as_bytes()).is_err() {
+                        eprintln!("Failed to write cookie");
+                    }
+                }
+                drop(webview.take().expect("WebView should only be dropped once"));
             }
             _ => (),
         }
     });
 
-    println!("Escaped");
-    cookie_recv.try_recv().map_err(Into::into)
+    std::fs::read_to_string(cookie_file).map_err(|_| anyhow!("failed to retrieve cookie"))
 }
 
 #[cfg(target_os = "linux")]
-fn extract_cookies_from_webview(webview: &WebView, cookie_proxy: EventLoopProxy<UserEvent>) {
+fn extract_cookies_from_webview(
+    webview: &WebView,
+    cookie_proxy: EventLoopProxy<UserEvent>,
+    _cookie_file: &Path,
+) {
     use webkit2gtk::{CookieManagerExt, WebContextExt, WebViewExt};
     use wry::webview::WebviewExtUnix;
 
@@ -134,12 +147,70 @@ fn extract_cookies_from_webview(webview: &WebView, cookie_proxy: EventLoopProxy<
 }
 
 #[cfg(target_os = "macos")]
-async fn extract_cookies_from_webview(webview: &WebView, cookie_proxy: EventLoopProxy<UserEvent>) {
-    use wry::webview::WebviewExtMacOS;
+fn extract_cookies_from_webview(
+    webview: &WebView,
+    _cookie_proxy: EventLoopProxy<UserEvent>,
+    cookie_file: &Path,
+) {
+    use block::ConcreteBlock;
+    use objc::runtime::Object;
+    use std::os::raw::c_char;
+    use std::{slice, str};
 
-    let wk_webview = webview.webview();
+    unsafe fn object_to_string(object: *mut Object) -> String {
+        let bytes: *const c_char = msg_send![object, UTF8String];
+        let bytes = bytes as *const u8;
 
-    // Some Obj-C magic to get wk_webview.configuration.websiteDataStore.httpCookieStore, run
-    // getAllCookies: on that and filter for the NSHTTPCookies that have the relavant domain
-    todo!()
+        let len = msg_send![object, lengthOfBytesUsingEncoding:4];
+
+        let mut aligned_bytes = vec![];
+        for i in 0..len {
+            aligned_bytes.push(bytes.offset(i).read_unaligned());
+        }
+
+        str::from_utf8(&aligned_bytes).unwrap().into()
+    }
+
+    unsafe {
+        let website_data_store: *mut Object =
+            msg_send![class!(WKWebsiteDataStore), defaultDataStore];
+        // TODO: Undo ugly fn_once stuff, not necessary anymore
+        let block = ConcreteBlock::new(move |cookies: *mut Object| {
+            let count: usize = msg_send![cookies, count];
+            let mut cookie_pairs: Vec<(String, String)> = vec![];
+            for i in 0..count {
+                let cookie: *mut Object = msg_send![cookies, objectAtIndex:i];
+                let key: *mut Object = msg_send![cookie, name];
+                let value: *mut Object = msg_send![cookie, value];
+                let domain: *mut Object = msg_send![cookie, domain];
+                let path: *mut Object = msg_send![cookie, path];
+                let key = object_to_string(key);
+                let value = object_to_string(value);
+                let domain = object_to_string(domain);
+                let path = object_to_string(path);
+                if path == "/" && domain == "learn.uq.edu.au" {
+                    cookie_pairs.push((key, value))
+                }
+            }
+
+            let megacookie = cookie_pairs
+                .iter()
+                .map(|(key, value)| format!("{}={}", key, value))
+                .collect::<Vec<String>>()
+                .join("; ");
+
+            let res = File::create(cookie_file);
+            if let Ok(mut file) = res {
+                if file.write_all(megacookie.as_bytes()).is_err() {
+                    eprintln!("Failed to write cookie");
+                }
+            } else {
+                eprintln!("Failed to create file: {:?}", res.err().unwrap());
+            }
+
+            webview.load_url("https://macos-done");
+        });
+        let http_cookie_store: *mut Object = msg_send![website_data_store, httpCookieStore];
+        let _: () = msg_send![http_cookie_store, getAllCookies:block];
+    }
 }
