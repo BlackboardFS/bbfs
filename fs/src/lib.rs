@@ -287,6 +287,21 @@ impl<Client: BBClient> BBFS<Client> {
             },
         }
     }
+
+    fn file_size(&self, item: &CourseItemInode) -> Result<usize, Errno> {
+        match item.ty {
+            CourseItemInodeType::DescriptionFile | CourseItemInodeType::BlackboardLinkFile => {
+                Ok(item
+                    .item
+                    .description
+                    .as_ref()
+                    .expect("DescriptionFiles should always have descriptions")
+                    .len())
+            }
+            CourseItemInodeType::Normal => self.client.get_item_size(&item.item),
+            CourseItemInodeType::AttachmentFolder => unreachable!(),
+        }
+    }
 }
 
 impl<Client: BBClient> Filesystem for BBFS<Client> {
@@ -327,7 +342,7 @@ impl<Client: BBClient> Filesystem for BBFS<Client> {
         for (inode, item) in items.iter() {
             if name == item.file_name() {
                 match Self::file_type(item) {
-                    FileType::RegularFile => match self.client.get_item_size(&item.item) {
+                    FileType::RegularFile => match self.file_size(item) {
                         Ok(size) => reply.entry(&TTL, &fileattr(*inode, size as u64), 0),
                         Err(errno) => {
                             reply.error(errno as _);
@@ -351,7 +366,7 @@ impl<Client: BBClient> Filesystem for BBFS<Client> {
                     reply.attr(&TTL, &dirattr(ino));
                 } else if let Some(item) = self.course_item(ino) {
                     match Self::file_type(item) {
-                        FileType::RegularFile => match self.client.get_item_size(&item.item) {
+                        FileType::RegularFile => match self.file_size(item) {
                             Ok(size) => reply.attr(&TTL, &fileattr(ino, size as u64)),
                             Err(errno) => {
                                 reply.error(errno as _);
