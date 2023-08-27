@@ -349,7 +349,9 @@ impl<Client: BBClient> Filesystem for BBFS<Client> {
                             return;
                         }
                     },
-                    FileType::Directory => reply.entry(&TTL, &dirattr(*inode), 0),
+                    FileType::Directory => {
+                        reply.entry(&TTL, &dirattr(*inode), 0);
+                    }
                     _ => unreachable!(),
                 };
                 return;
@@ -450,9 +452,7 @@ impl<Client: BBClient> Filesystem for BBFS<Client> {
         println!("readdir(ino={ino}, offset={offset})");
 
         let mut entries = vec![];
-        if offset == 0 {
-            entries.push((ino, FileType::Directory, ".".into()));
-        }
+        entries.push((ino, FileType::Directory, ".".into()));
         if ino == 1 {
             entries.push((1, FileType::Directory, "..".into()));
 
