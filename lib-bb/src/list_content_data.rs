@@ -39,9 +39,15 @@ impl BBAPIClient {
 
                 let description = elem
                     .tag("div")
-                    .attr("class", "vtbegenerated_div")
+                    .attr("class", "vtbegenerated")
                     .find()
-                    .map(|elem| elem.text());
+                    .map(|elem| {
+                        // terrible code warning!
+                        let re = Regex::new("(?s)<script.*?>.*?</script>").unwrap();
+                        let html = elem.display();
+                        let html = re.replace_all(&html, "");
+                        Soup::new(&html).text().trim().into()
+                    });
 
                 let icon = elem
                     .tag("img")

@@ -65,8 +65,7 @@ impl BBAPIClient {
     }
 
     pub fn get_page(&self, page: BBPage) -> Result<String, Errno> {
-        self
-            .agent
+        self.agent
             .get(&page.url())
             .set("Cookie", &self.cookies)
             .call()
