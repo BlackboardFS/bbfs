@@ -49,20 +49,31 @@ fn fileattr(inode: u64, size: u64) -> FileAttr {
 #[derive(Clone)]
 struct CourseItemInode {
     item: CourseItem,
-    is_attachment_folder: bool,
+    ty: CourseItemInodeType,
     children: Option<Vec<u64>>,
 }
 
+#[derive(Clone)]
+enum CourseItemInodeType {
+    Normal,
+    AttachmentFolder,
+    DescriptionFile,
+    BlackboardLinkFile,
+}
+
 impl CourseItemInode {
-    fn file_name(&self) -> &str {
-        self.is_attachment_folder
-            .then_some(self.item.name.as_str())
-            .unwrap_or(
-                self.item
-                    .file_name
-                    .as_deref()
-                    .unwrap_or(self.item.name.as_str()),
-            )
+    fn file_name(&self) -> String {
+        match &self.ty {
+            CourseItemInodeType::Normal => self
+                .item
+                .file_name
+                .as_ref()
+                .cloned()
+                .unwrap_or_else(|| self.item.name.clone()),
+            CourseItemInodeType::AttachmentFolder => self.item.name.clone(),
+            CourseItemInodeType::DescriptionFile => format!("{}.txt", self.item.name),
+            CourseItemInodeType::BlackboardLinkFile => self.item.name.clone(),
+        }
     }
 }
 
@@ -126,11 +137,50 @@ impl<Client: BBClient> BBFS<Client> {
                     description: Some(create_link_file(hyperlink)),
                     attachments: vec![],
                 },
-                is_attachment_folder: false,
+                ty: CourseItemInodeType::BlackboardLinkFile,
                 children: Some(vec![]),
             },
         );
         inode
+    }
+
+    fn create_normal_item(&mut self, item: CourseItem, inodes: &mut Vec<u64>) {
+        if item.content.is_some() {
+            let inode = self.get_free_inode();
+            self.items.insert(
+                inode,
+                CourseItemInode {
+                    item: item.clone(),
+                    ty: CourseItemInodeType::Normal,
+                    children: None,
+                },
+            );
+            inodes.push(inode);
+        }
+        if item.description.is_some() {
+            let inode = self.get_free_inode();
+            self.items.insert(
+                inode,
+                CourseItemInode {
+                    item: item.clone(),
+                    ty: CourseItemInodeType::DescriptionFile,
+                    children: None,
+                },
+            );
+            inodes.push(inode);
+        }
+        if !item.attachments.is_empty() {
+            let inode = self.get_free_inode();
+            self.items.insert(
+                inode,
+                CourseItemInode {
+                    item,
+                    ty: CourseItemInodeType::AttachmentFolder,
+                    children: None,
+                },
+            );
+            inodes.push(inode);
+        }
     }
 
     fn course_items(
@@ -149,41 +199,7 @@ impl<Client: BBClient> BBFS<Client> {
             let course_id = course.course.id.clone(); // TODO: Shouldn't really be clone but lifetimes
 
             for item in self.client.get_course_contents(&course.course)?.into_iter() {
-                if !item.attachments.is_empty() {
-                    if matches!(&item.content, Some(CourseItemContent::Link(_))) {
-                        let inode = self.get_free_inode();
-                        self.items.insert(
-                            inode,
-                            CourseItemInode {
-                                item: item.clone(),
-                                is_attachment_folder: false,
-                                children: None,
-                            },
-                        );
-                        inodes.push(inode);
-                    }
-                    let inode = self.get_free_inode();
-                    self.items.insert(
-                        inode,
-                        CourseItemInode {
-                            item,
-                            is_attachment_folder: true,
-                            children: None,
-                        },
-                    );
-                    inodes.push(inode);
-                } else {
-                    let inode = self.get_free_inode();
-                    self.items.insert(
-                        inode,
-                        CourseItemInode {
-                            item,
-                            is_attachment_folder: false,
-                            children: None,
-                        },
-                    );
-                    inodes.push(inode);
-                }
+                self.create_normal_item(item, &mut inodes);
             }
 
             inodes.push(
@@ -220,7 +236,7 @@ impl<Client: BBClient> BBFS<Client> {
         let inodes = if let Some(children) = &item.children {
             children.clone()
         } else {
-            let (url, contents) = if item.is_attachment_folder {
+            let (url, contents) = if matches!(item.ty, CourseItemInodeType::AttachmentFolder) {
                 // TODO: Get URL of parent of the item (the item itself doesn't have a URL)
                 ("".into(), self.client.get_attachment_directory(&item.item)?)
             } else {
@@ -235,41 +251,7 @@ impl<Client: BBClient> BBFS<Client> {
 
             let mut inodes = Vec::new();
             for child in contents {
-                if !child.attachments.is_empty() {
-                    if matches!(&child.content, Some(CourseItemContent::Link(_))) {
-                        let inode = self.get_free_inode();
-                        self.items.insert(
-                            inode,
-                            CourseItemInode {
-                                item: child.clone(),
-                                is_attachment_folder: false,
-                                children: None,
-                            },
-                        );
-                        inodes.push(inode);
-                    }
-                    let inode = self.get_free_inode();
-                    self.items.insert(
-                        inode,
-                        CourseItemInode {
-                            item: child,
-                            is_attachment_folder: true,
-                            children: None,
-                        },
-                    );
-                    inodes.push(inode);
-                } else {
-                    let inode = self.get_free_inode();
-                    self.items.insert(
-                        inode,
-                        CourseItemInode {
-                            item: child,
-                            is_attachment_folder: false,
-                            children: None,
-                        },
-                    );
-                    inodes.push(inode);
-                }
+                self.create_normal_item(child, &mut inodes);
             }
 
             inodes.push(self.create_hyperlink_item(&url));
@@ -292,7 +274,9 @@ impl<Client: BBClient> BBFS<Client> {
     }
 
     fn file_type(item: &CourseItemInode) -> FileType {
-        if !item.item.attachments.is_empty() && item.is_attachment_folder {
+        if !item.item.attachments.is_empty()
+            && matches!(item.ty, CourseItemInodeType::AttachmentFolder)
+        {
             FileType::Directory
         } else {
             match item.item.content {
@@ -342,7 +326,7 @@ impl<Client: BBClient> Filesystem for BBFS<Client> {
 
         for (inode, item) in items.iter() {
             if name == item.file_name() {
-                match Self::file_type(&item) {
+                match Self::file_type(item) {
                     FileType::RegularFile => match self.client.get_item_size(&item.item) {
                         Ok(size) => reply.entry(&TTL, &fileattr(*inode, size as u64), 0),
                         Err(errno) => {
@@ -401,18 +385,39 @@ impl<Client: BBClient> Filesystem for BBFS<Client> {
             // TODO: Cache item contents
             let offset = offset as usize;
             let end_offset = offset + (size as usize);
-            match self
-                .client
-                .get_item_contents(&item.item.clone())
-                .and_then(|contents| {
-                    contents
-                        .get(offset..end_offset.min(contents.len()))
-                        .ok_or(Errno::EIO)
-                }) {
-                Ok(contents) => reply.data(contents),
-                Err(errno) => {
-                    reply.error(errno as _);
+            match item.ty {
+                CourseItemInodeType::Normal => match self
+                    .client
+                    .get_item_contents(&item.item.clone())
+                    .and_then(|contents| {
+                        contents
+                            .get(offset..end_offset.min(contents.len()))
+                            .ok_or(Errno::EIO)
+                    }) {
+                    Ok(contents) => reply.data(contents),
+                    Err(errno) => {
+                        reply.error(errno as _);
+                    }
+                },
+                CourseItemInodeType::BlackboardLinkFile | CourseItemInodeType::DescriptionFile => {
+                    match {
+                        let description = item
+                            .item
+                            .description
+                            .as_ref()
+                            .expect("DescriptionFiles should always have descriptions")
+                            .as_bytes();
+                        description
+                            .get(offset..end_offset.min(description.len()))
+                            .ok_or(Errno::EIO)
+                    } {
+                        Ok(contents) => reply.data(contents),
+                        Err(errno) => {
+                            reply.error(errno as _);
+                        }
+                    }
                 }
+                CourseItemInodeType::AttachmentFolder => unreachable!(),
             }
         } else {
             reply.error(ENOENT);
