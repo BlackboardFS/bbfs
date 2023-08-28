@@ -21,7 +21,7 @@ pub trait BBClient {
     type Error: Into<Errno> + Debug;
 
     fn get_root(&self) -> Result<Self::Item, Self::Error>;
-    fn get_children(&self, path: Vec<&Self::Item>) -> Result<Option<Vec<Self::Item>>, Self::Error>;
+    fn get_children(&self, path: Vec<&Self::Item>) -> Result<Vec<Self::Item>, Self::Error>;
     fn get_size(&self, item: &Self::Item) -> Result<usize, Self::Error>;
     fn get_contents(&self, item: &Self::Item) -> Result<Vec<u8>, Self::Error>;
     fn get_type(&self, item: &Self::Item) -> ItemType;
@@ -312,35 +312,85 @@ impl BBClient for BBAPIClient {
         }))
     }
 
-    fn get_children(&self, path: Vec<&Item>) -> Result<Option<Vec<Item>>, BBError> {
+    fn get_children(&self, path: Vec<&Item>) -> Result<Vec<Item>, BBError> {
         if let Some(item) = path.last() {
+            if self.get_type(item) != ItemType::Directory {
+                unreachable!();
+            }
+
             match item {
-                Item::Course(course) => Ok(Some(
-                    self.get_course_contents(course)?
-                        .into_iter()
-                        .map(Item::CourseItem)
-                        .collect(),
-                )),
-                Item::CourseItem(course_item) => match &course_item.content {
-                    Some(CourseItemContent::Link(_)) | Some(CourseItemContent::FileUrl(_)) => {
-                        Ok(None)
-                    }
-                    Some(CourseItemContent::FolderUrl(url)) => Ok(Some(
-                        self.get_directory_contents(url.clone())?
+                Item::Course(course) => Ok(self
+                    .get_course_contents(course)?
+                    .into_iter()
+                    .map(Item::CourseItem)
+                    .collect()),
+                Item::CourseItem(course_item) => {
+                    let mut items: Vec<Item> = match &course_item.content {
+                        Some(CourseItemContent::Link(link)) => {
+                            vec![Item::SynthesizedFile(SynthesizedFile {
+                                name: format!("{}.{}", course_item.name, LINK_FILE_EXT),
+                                contents: create_link_file(link),
+                            })]
+                        }
+                        Some(CourseItemContent::FileUrl(url)) => {
+                            vec![Item::CourseItem(CourseItem {
+                                name: course_item.name.clone(),
+                                content: Some(CourseItemContent::FileUrl(url.clone())),
+                                description: None,
+                                attachments: vec![],
+                            })]
+                        }
+                        Some(CourseItemContent::FolderUrl(url)) => self
+                            .get_directory_contents(url.clone())?
                             .into_iter()
                             .map(Item::CourseItem)
                             .collect(),
-                    )),
-                    // TODO: attachments
-                    None => Ok(None),
-                },
-                Item::SynthesizedDirectory(directory) => Ok(Some(directory.contents.clone())),
-                Item::SynthesizedFile(_) => Ok(None),
+                        // TODO: attachments
+                        None => vec![],
+                    };
+
+                    if !course_item.attachments.is_empty() {
+                        items.append(
+                            &mut course_item
+                                .attachments
+                                .iter()
+                                .map(|attachment| {
+                                    Item::CourseItem(CourseItem {
+                                        name: "".into(),
+                                        content: Some(CourseItemContent::FileUrl(
+                                            attachment.clone(),
+                                        )),
+                                        description: None,
+                                        attachments: vec![],
+                                    })
+                                })
+                                .collect(),
+                        );
+                    }
+
+                    if let Some(description) = &course_item.description {
+                        items.push(Item::SynthesizedFile(SynthesizedFile {
+                            name: format!("{}.txt", course_item.name),
+                            contents: description.clone(),
+                        }));
+                    }
+
+                    if let Some(CourseItemContent::Link(link)) = &course_item.content {
+                        if !course_item.attachments.is_empty() {
+                            items.push(Item::SynthesizedFile(SynthesizedFile {
+                                name: format!("{}.{}", course_item.name, LINK_FILE_EXT),
+                                contents: create_link_file(link),
+                            }));
+                        }
+                    }
+
+                    Ok(items)
+                }
+                Item::SynthesizedDirectory(directory) => Ok(directory.contents.clone()),
+                Item::SynthesizedFile(_) => unreachable!(),
             }
         } else {
-            Ok(Some(
-                self.get_courses()?.into_iter().map(Item::Course).collect(),
-            ))
+            Ok(self.get_courses()?.into_iter().map(Item::Course).collect())
         }
     }
 
@@ -364,13 +414,21 @@ impl BBClient for BBAPIClient {
         match item {
             Item::Course(_) | Item::SynthesizedDirectory(_) => ItemType::Directory,
             Item::SynthesizedFile(_) => ItemType::File,
-            Item::CourseItem(course_item) => match course_item.content {
-                Some(CourseItemContent::FileUrl(_)) | Some(CourseItemContent::Link(_)) => {
-                    ItemType::File
+            Item::CourseItem(course_item) => {
+                if !course_item.attachments.is_empty()
+                    || (course_item.description.is_some() && course_item.content.is_some())
+                {
+                    ItemType::Directory
+                } else {
+                    match course_item.content {
+                        Some(CourseItemContent::FileUrl(_)) | Some(CourseItemContent::Link(_)) => {
+                            ItemType::File
+                        }
+                        Some(CourseItemContent::FolderUrl(_)) => ItemType::Directory,
+                        None => ItemType::File,
+                    }
                 }
-                Some(CourseItemContent::FolderUrl(_)) => ItemType::Directory,
-                None => ItemType::File,
-            },
+            }
         }
     }
 
@@ -379,15 +437,28 @@ impl BBClient for BBAPIClient {
             Item::Course(course) => course.short_name.clone(),
             Item::SynthesizedDirectory(directory) => directory.name.clone(),
             Item::SynthesizedFile(file) => file.name.clone(),
-            Item::CourseItem(course_item) => match &course_item.content {
-                Some(CourseItemContent::FileUrl(file)) => self.get_download_file_name(file)?,
-                Some(CourseItemContent::FolderUrl(_)) => course_item.name.clone(),
-                Some(CourseItemContent::Link(_)) => {
-                    format!("{}.{}", course_item.name, LINK_FILE_EXT)
+            Item::CourseItem(course_item) => {
+                if self.get_type(item) == ItemType::Directory {
+                    course_item.name.clone()
+                } else {
+                    match &course_item.content {
+                        Some(CourseItemContent::FileUrl(file)) => {
+                            self.get_download_file_name(file)?
+                        }
+                        Some(CourseItemContent::FolderUrl(_)) => course_item.name.clone(),
+                        Some(CourseItemContent::Link(_)) => {
+                            format!("{}.{}", course_item.name, LINK_FILE_EXT)
+                        }
+                        None => {
+                            if course_item.description.is_some() {
+                                format!("{}.txt", course_item.name)
+                            } else {
+                                course_item.name.clone()
+                            }
+                        }
+                    }
                 }
-                // TODO: txt file extension when necessary
-                None => course_item.name.clone(),
-            },
+            }
         })
     }
 }

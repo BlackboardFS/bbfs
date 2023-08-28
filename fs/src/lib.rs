@@ -229,8 +229,7 @@ impl<Client: BBClient> Filesystem for BBFS<Client> {
                 .get_children(self.path(&self.inodes[&ino]))
                 .map_err(Into::<Errno>::into)
             {
-                Ok(Some(items)) => items,
-                Ok(None) => return reply.error(EIO),
+                Ok(items) => items,
                 Err(err) => return reply.error(err as _),
             };
 
