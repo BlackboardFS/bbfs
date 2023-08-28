@@ -1,15 +1,14 @@
 use fuser::{
     FileAttr, FileType, Filesystem, ReplyAttr, ReplyData, ReplyDirectory, ReplyEntry, Request,
 };
-use lib_bb::{Course, CourseItem, CourseItemContent};
-use libc::ENOENT;
+use libc::{EIO, ENOENT};
 use nix::errno::Errno;
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::time::{Duration, UNIX_EPOCH};
 
-use lib_bb::client::BBClient;
-use lib_bb::{create_link_file, LINK_FILE_EXT};
+use lib_bb::client::{BBClient, ItemType};
 
 // TODO: Figure out the best TTL (if any)
 const TTL: Duration = Duration::from_secs(1);
@@ -47,260 +46,80 @@ fn fileattr(inode: u64, size: u64) -> FileAttr {
 }
 
 #[derive(Clone)]
-struct CourseItemInode {
-    item: CourseItem,
-    ty: CourseItemInodeType,
+struct ItemInode<Item> {
+    parent: Option<u64>,
+    ino: u64,
+    ty: FileType,
+    name: String,
+    item: Item,
+    /// If None, the children haven't been loaded from the client yet
     children: Option<Vec<u64>>,
-}
-
-#[derive(Clone)]
-enum CourseItemInodeType {
-    Normal,
-    AttachmentFolder,
-    DescriptionFile,
-    BlackboardLinkFile,
-}
-
-impl CourseItemInode {
-    fn file_name(&self) -> String {
-        match &self.ty {
-            CourseItemInodeType::Normal => self
-                .item
-                .file_name
-                .as_ref()
-                .cloned()
-                .unwrap_or_else(|| self.item.name.clone()),
-            CourseItemInodeType::AttachmentFolder => self.item.name.clone(),
-            CourseItemInodeType::DescriptionFile => format!("{}.txt", self.item.name),
-            CourseItemInodeType::BlackboardLinkFile => self.item.name.clone(),
-        }
-    }
-}
-
-struct CourseInode {
-    course: Course,
-    items: Option<Vec<u64>>,
 }
 
 pub struct BBFS<Client: BBClient> {
     client: Client,
-    next_free_inode: u64,
-    courses: HashMap<u64, CourseInode>,
-    items: HashMap<u64, CourseItemInode>,
+    next_free_inode: RefCell<u64>,
+    inodes: HashMap<u64, ItemInode<Client::Item>>,
 }
 
 impl<Client: BBClient> BBFS<Client> {
-    pub fn new(client: Client) -> BBFS<Client> {
-        let mut bbfs = BBFS {
-            client,
-            next_free_inode: 2,
-            courses: HashMap::new(),
-            items: HashMap::new(),
-        };
-        bbfs.populate_courses().unwrap();
-        bbfs
-    }
-
-    fn get_free_inode(&mut self) -> u64 {
-        let inode = self.next_free_inode;
-        self.next_free_inode += 1;
-        inode
-    }
-
-    fn populate_courses(&mut self) -> Result<(), Errno> {
-        for course in self.client.get_courses()?.into_iter() {
-            let inode = self.get_free_inode();
-            self.courses.insert(
-                inode,
-                CourseInode {
-                    course,
-                    items: None,
-                },
-            );
-        }
-        Ok(())
-    }
-
-    fn course(&self, inode: u64) -> Option<&CourseInode> {
-        self.courses.get(&inode)
-    }
-
-    fn create_hyperlink_item(&mut self, hyperlink: &str) -> u64 {
-        let inode = self.get_free_inode();
-        self.items.insert(
-            inode,
-            CourseItemInode {
-                item: CourseItem {
-                    name: format!("Blackboard.{LINK_FILE_EXT}"),
-                    file_name: None,
-                    content: None,
-                    description: Some(create_link_file(hyperlink)),
-                    attachments: vec![],
-                },
-                ty: CourseItemInodeType::BlackboardLinkFile,
-                children: Some(vec![]),
+    pub fn new(client: Client) -> Result<BBFS<Client>, Client::Error> {
+        let mut inodes = HashMap::new();
+        inodes.insert(
+            1,
+            ItemInode {
+                parent: None,
+                ino: 1,
+                ty: FileType::Directory,
+                name: "root".into(),
+                item: client.get_root()?,
+                children: None,
             },
         );
-        inode
+        Ok(BBFS {
+            client,
+            next_free_inode: RefCell::new(2),
+            inodes,
+        })
     }
 
-    fn create_normal_item(&mut self, item: CourseItem, inodes: &mut Vec<u64>) {
-        if item.content.is_some() {
-            let inode = self.get_free_inode();
-            self.items.insert(
-                inode,
-                CourseItemInode {
-                    item: item.clone(),
-                    ty: CourseItemInodeType::Normal,
-                    children: None,
-                },
-            );
-            inodes.push(inode);
-        }
-        if item.description.is_some() {
-            let inode = self.get_free_inode();
-            self.items.insert(
-                inode,
-                CourseItemInode {
-                    item: item.clone(),
-                    ty: CourseItemInodeType::DescriptionFile,
-                    children: None,
-                },
-            );
-            inodes.push(inode);
-        }
-        if !item.attachments.is_empty() {
-            let inode = self.get_free_inode();
-            self.items.insert(
-                inode,
-                CourseItemInode {
-                    item,
-                    ty: CourseItemInodeType::AttachmentFolder,
-                    children: None,
-                },
-            );
-            inodes.push(inode);
-        }
+    fn get_free_inode(&self) -> u64 {
+        let mut inode = self.next_free_inode.borrow_mut();
+        let free_inode = *inode;
+        *inode += 1;
+        free_inode
+    }
+}
+
+impl<Client: BBClient> BBFS<Client> {
+    fn attr(&self, inode: &ItemInode<Client::Item>) -> Result<FileAttr, Client::Error> {
+        Ok(match self.client.get_type(&inode.item) {
+            ItemType::File => fileattr(inode.ino, self.client.get_size(&inode.item)? as u64),
+            ItemType::Directory => dirattr(inode.ino),
+        })
     }
 
-    fn course_items(
-        &mut self,
-        course_inode: u64,
-    ) -> Result<Option<Vec<(u64, CourseItemInode)>>, Errno> {
-        let course = match self.course(course_inode) {
-            Some(course) => course,
-            None => return Ok(None),
-        };
-
-        let inodes = if let Some(items) = &course.items {
-            items.clone()
-        } else {
-            let mut inodes = Vec::new();
-            let course_id = course.course.id.clone(); // TODO: Shouldn't really be clone but lifetimes
-
-            for item in self.client.get_course_contents(&course.course)?.into_iter() {
-                self.create_normal_item(item, &mut inodes);
+    fn path(&self, inode: &ItemInode<Client::Item>) -> Vec<&Client::Item> {
+        match inode.parent.and_then(|ino| self.inodes.get(&ino)) {
+            Some(parent) => {
+                let mut path = self.path(parent);
+                path.push(&self.inodes[&inode.ino].item);
+                path
             }
+            None => vec![&self.inodes[&inode.ino].item],
+        }
+    }
 
-            inodes.push(
-                self.create_hyperlink_item(&format!("/ultra/courses/{}/cl/outline", course_id)),
-            );
-
-            self.courses.get_mut(&course_inode).unwrap().items = Some(inodes.clone());
-
-            inodes
-        };
-
-        Ok(Some(
-            inodes
+    fn cached_children(
+        &self,
+        inode: &ItemInode<Client::Item>,
+    ) -> Option<Vec<ItemInode<Client::Item>>> {
+        inode.children.as_ref().map(|children| {
+            children
                 .iter()
-                .map(|inode| (*inode, self.items.get(inode).unwrap().clone()))
-                .collect(),
-        ))
-    }
-
-    fn course_item(&self, inode: u64) -> Option<&CourseItemInode> {
-        self.items.get(&inode)
-    }
-
-    fn course_item_children(
-        &mut self,
-        inode: u64,
-    ) -> Result<Option<Vec<(u64, CourseItemInode)>>, Errno> {
-        let item = match self.items.get(&inode) {
-            Some(item) => item,
-            None => return Ok(None),
-        };
-
-        // If the children have already been fetched return them
-        let inodes = if let Some(children) = &item.children {
-            children.clone()
-        } else {
-            let (url, contents) = if matches!(item.ty, CourseItemInodeType::AttachmentFolder) {
-                // TODO: Get URL of parent of the item (the item itself doesn't have a URL)
-                ("".into(), self.client.get_attachment_directory(&item.item)?)
-            } else {
-                match item.item.content {
-                    Some(CourseItemContent::FolderUrl(ref url)) => (
-                        url.clone(), // TODO: Also required because lifetimes
-                        self.client.get_directory_contents(url.clone())?,
-                    ),
-                    _ => return Ok(None),
-                }
-            };
-
-            let mut inodes = Vec::new();
-            for child in contents {
-                self.create_normal_item(child, &mut inodes);
-            }
-
-            inodes.push(self.create_hyperlink_item(&url));
-
-            self.items.get_mut(&inode).unwrap().children = Some(inodes.clone());
-
-            inodes
-        };
-
-        Ok(Some(
-            inodes
-                .iter()
-                .map(|inode| (*inode, self.items.get(inode).unwrap().clone()))
-                .collect(),
-        ))
-    }
-
-    fn course_dir_name(course: &Course) -> String {
-        course.short_name.clone()
-    }
-
-    fn file_type(item: &CourseItemInode) -> FileType {
-        match item.ty {
-            CourseItemInodeType::AttachmentFolder => FileType::Directory,
-            CourseItemInodeType::DescriptionFile | CourseItemInodeType::BlackboardLinkFile => {
-                FileType::RegularFile
-            }
-            _ => match item.item.content {
-                Some(CourseItemContent::FileUrl(_)) => FileType::RegularFile,
-                Some(CourseItemContent::Link(_)) => FileType::RegularFile,
-                Some(CourseItemContent::FolderUrl(_)) => FileType::Directory,
-                None => FileType::RegularFile,
-            },
-        }
-    }
-
-    fn file_size(&self, item: &CourseItemInode) -> Result<usize, Errno> {
-        match item.ty {
-            CourseItemInodeType::DescriptionFile | CourseItemInodeType::BlackboardLinkFile => {
-                Ok(item
-                    .item
-                    .description
-                    .as_ref()
-                    .expect("DescriptionFiles should always have descriptions")
-                    .len())
-            }
-            CourseItemInodeType::Normal => self.client.get_item_size(&item.item),
-            CourseItemInodeType::AttachmentFolder => unreachable!(),
-        }
+                .map(|ino| self.inodes[ino].clone())
+                .collect()
+        })
     }
 }
 
@@ -309,79 +128,33 @@ impl<Client: BBClient> Filesystem for BBFS<Client> {
         let name = name.to_str().unwrap();
         println!("lookup(name={name})");
 
-        if parent == 1 {
-            for (inode, course) in self.courses.iter() {
-                if name == Self::course_dir_name(&course.course) {
-                    reply.entry(&TTL, &dirattr(*inode), 0);
-                    return;
-                }
-            }
-            reply.error(ENOENT);
-            return;
-        }
-
-        let items = match self.course_items(parent) {
-            Ok(Some(items)) => items,
-            Ok(None) => match self.course_item_children(parent) {
-                Ok(Some(items)) => items,
-                Ok(None) => {
-                    reply.error(ENOENT);
-                    return;
-                }
-                Err(errno) => {
-                    reply.error(errno as _);
-                    return;
-                }
-            },
-            Err(errno) => {
-                reply.error(errno as _);
-                return;
-            }
-        };
-
-        for (inode, item) in items.iter() {
-            if name == item.file_name() {
-                match Self::file_type(item) {
-                    FileType::RegularFile => match self.file_size(item) {
-                        Ok(size) => reply.entry(&TTL, &fileattr(*inode, size as u64), 0),
-                        Err(errno) => {
-                            reply.error(errno as _);
-                            return;
-                        }
-                    },
-                    FileType::Directory => {
-                        reply.entry(&TTL, &dirattr(*inode), 0);
-                    }
-                    _ => unreachable!(),
+        match self
+            .inodes
+            .values()
+            .find(|inode| inode.parent == Some(parent) && inode.name == name)
+        {
+            Some(inode) => {
+                let attr = match self.attr(inode) {
+                    Ok(attr) => attr,
+                    Err(err) => return reply.error(err.into() as _),
                 };
-                return;
+                reply.entry(&TTL, &attr, 0)
             }
+            None => reply.error(ENOENT),
         }
     }
 
     fn getattr(&mut self, _req: &Request, ino: u64, reply: ReplyAttr) {
         println!("getattr(ino={ino})");
-        match ino {
-            1 => reply.attr(&TTL, &dirattr(1)),
-            _ => {
-                if self.course(ino).is_some() {
-                    reply.attr(&TTL, &dirattr(ino));
-                } else if let Some(item) = self.course_item(ino) {
-                    match Self::file_type(item) {
-                        FileType::RegularFile => match self.file_size(item) {
-                            Ok(size) => reply.attr(&TTL, &fileattr(ino, size as u64)),
-                            Err(errno) => {
-                                reply.error(errno as _);
-                                return;
-                            }
-                        },
-                        FileType::Directory => reply.attr(&TTL, &dirattr(ino)),
-                        _ => unreachable!(),
-                    }
-                } else {
-                    reply.error(ENOENT);
-                }
-            }
+
+        let inode = match self.inodes.get(&ino) {
+            Some(inode) => inode,
+            None => return reply.error(ENOENT),
+        };
+
+        match self.attr(inode) {
+            Ok(attr) => reply.attr(&TTL, &attr),
+            Err(err) => reply.error(err.into() as _),
         }
     }
 
@@ -398,46 +171,31 @@ impl<Client: BBClient> Filesystem for BBFS<Client> {
     ) {
         println!("read(ino={ino}, offset={offset}, size={size})");
 
-        if let Some(item) = self.course_item(ino) {
-            // TODO: Cache item contents
-            let offset = offset as usize;
-            let end_offset = offset + (size as usize);
-            match item.ty {
-                CourseItemInodeType::Normal => match self
-                    .client
-                    .get_item_contents(&item.item.clone())
-                    .and_then(|contents| {
-                        contents
-                            .get(offset..end_offset.min(contents.len()))
-                            .ok_or(Errno::EIO)
-                    }) {
-                    Ok(contents) => reply.data(contents),
-                    Err(errno) => {
-                        reply.error(errno as _);
-                    }
-                },
-                CourseItemInodeType::BlackboardLinkFile | CourseItemInodeType::DescriptionFile => {
-                    match {
-                        let description = item
-                            .item
-                            .description
-                            .as_ref()
-                            .expect("DescriptionFiles should always have descriptions")
-                            .as_bytes();
-                        description
-                            .get(offset..end_offset.min(description.len()))
-                            .ok_or(Errno::EIO)
-                    } {
-                        Ok(contents) => reply.data(contents),
-                        Err(errno) => {
-                            reply.error(errno as _);
-                        }
-                    }
-                }
-                CourseItemInodeType::AttachmentFolder => unreachable!(),
+        let inode = match self.inodes.get(&ino) {
+            Some(inode) => inode,
+            None => return reply.error(ENOENT),
+        };
+
+        if self.client.get_type(&inode.item) != ItemType::File {
+            return reply.error(EIO);
+        }
+
+        let offset = offset as usize;
+        let end_offset = offset + (size as usize);
+        match self
+            .client
+            .get_contents(&inode.item)
+            .map_err(Into::<Errno>::into)
+            .and_then(|contents| {
+                contents
+                    .get(offset..end_offset.min(contents.len()))
+                    .ok_or(Errno::EIO)
+                    .map(|contents| contents.to_vec())
+            }) {
+            Ok(contents) => {
+                reply.data(&contents);
             }
-        } else {
-            reply.error(ENOENT);
+            Err(err) => reply.error(err as _),
         }
     }
 
@@ -452,51 +210,60 @@ impl<Client: BBClient> Filesystem for BBFS<Client> {
         println!("readdir(ino={ino}, offset={offset})");
 
         let mut entries = vec![];
-        entries.push((ino, FileType::Directory, ".".into()));
-        if ino == 1 {
-            entries.push((1, FileType::Directory, "..".into()));
+        entries.push((ino, FileType::Directory, "."));
 
-            for (inode, course) in self.courses.iter() {
-                entries.push((
-                    *inode,
-                    FileType::RegularFile,
-                    Self::course_dir_name(&course.course),
-                ))
+        let mut children = if let Some(inode) = self.inodes.get(&ino) {
+            if self.client.get_type(&inode.item) != ItemType::Directory {
+                return reply.error(EIO);
             }
+
+            entries.push((inode.parent.unwrap_or(1), FileType::Directory, ".."));
+            self.cached_children(&inode)
         } else {
-            match self.course_items(ino) {
-                Ok(Some(items)) => {
-                    entries.push((1, FileType::Directory, "..".into()));
+            return reply.error(ENOENT);
+        };
 
-                    for (inode, item) in items {
-                        entries.push((inode, Self::file_type(&item), item.file_name().to_owned()));
-                    }
-                }
-                Ok(None) => match self.course_item_children(ino) {
-                    Ok(Some(children)) => {
-                        for (inode, child) in children {
-                            entries.push((
-                                inode,
-                                Self::file_type(&child),
-                                child.file_name().to_owned(),
-                            ));
-                        }
-                    }
-                    Ok(None) => {
-                        reply.error(ENOENT);
-                        return;
-                    }
-                    Err(errno) => {
-                        reply.error(errno as _);
-                        return;
-                    }
-                },
-                Err(errno) => {
-                    reply.error(errno as _);
-                    return;
-                }
+        if children.is_none() {
+            let items = match self
+                .client
+                .get_children(self.path(&self.inodes[&ino]))
+                .map_err(Into::<Errno>::into)
+            {
+                Ok(Some(items)) => items,
+                Ok(None) => return reply.error(EIO),
+                Err(err) => return reply.error(err as _),
+            };
+
+            let mut inodes = vec![];
+            for item in items {
+                let child_ino = self.get_free_inode();
+                let child_inode = ItemInode {
+                    parent: Some(ino),
+                    ino: child_ino,
+                    ty: match self.client.get_type(&item) {
+                        ItemType::File => FileType::RegularFile,
+                        ItemType::Directory => FileType::Directory,
+                    },
+                    name: self.client.get_name(&item).into(),
+                    item,
+                    children: None,
+                };
+                inodes.push(child_inode.clone());
+                self.inodes.insert(child_ino, child_inode);
             }
+            self.inodes.get_mut(&ino).unwrap().children =
+                Some(inodes.iter().map(|inode| inode.ino).collect());
+            children = Some(self.cached_children(&self.inodes[&ino]).unwrap())
         }
+
+        let children = match children {
+            Some(children) => children,
+            None => unreachable!(),
+        };
+
+        children
+            .iter()
+            .for_each(|child| entries.push((child.ino, child.ty, &child.name)));
 
         for (i, entry) in entries.into_iter().enumerate().skip(offset as usize) {
             if reply.add(entry.0, (i + 1) as i64, entry.1, entry.2) {

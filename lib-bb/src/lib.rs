@@ -18,7 +18,7 @@ mod list_content_data;
 pub mod memberships_data;
 mod ultra_data;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Course {
     pub short_name: String,
     pub full_name: String,

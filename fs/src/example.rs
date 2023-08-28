@@ -13,5 +13,10 @@ fn main() {
     dotenv().ok();
     let cookies = env::var("BBCOOKIE").unwrap();
     let client = BBAPIClient::new(cookies);
-    fuser::mount2(BBFS::new(client), mountpoint, &[MountOption::AutoUnmount]).unwrap();
+    fuser::mount2(
+        BBFS::new(client).unwrap(),
+        mountpoint,
+        &[MountOption::AutoUnmount],
+    )
+    .unwrap();
 }

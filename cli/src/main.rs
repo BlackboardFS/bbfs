@@ -54,7 +54,7 @@ fn main() -> anyhow::Result<()> {
 
     let client = BBAPIClient::new(cookies, args.all);
     fuser::mount2(
-        BBFS::new(client),
+        BBFS::new(client).expect("failed to initialize Blackboard client"),
         mount_point,
         &[MountOption::AutoUnmount, MountOption::RO],
     )

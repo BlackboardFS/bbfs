@@ -1,4 +1,4 @@
-use crate::client::BBAPIClient;
+use crate::client::{BBAPIClient, BBError};
 use anyhow::anyhow;
 use regex::Regex;
 use soup::prelude::*;
@@ -16,7 +16,7 @@ pub struct Content {
 }
 
 impl BBAPIClient {
-    pub fn get_folder_contents(&self, html: &str) -> anyhow::Result<Vec<Content>> {
+    pub fn get_folder_contents(&self, html: &str) -> Result<Vec<Content>, BBError> {
         // https://learn.uq.edu.au/webapps/blackboard/content/listContent.jsp?course_id={course_id}&content_id={content_id}&mode=reset
         let file = Regex::new(r".*/bbcswebdav/.*").unwrap();
         let soup = Soup::new(html);
@@ -24,7 +24,9 @@ impl BBAPIClient {
         soup.tag("ul")
             .attr("class", "contentList")
             .find()
-            .ok_or(anyhow!("There was no contentList"))?
+            .ok_or(BBError::FailedToWebScrapeFolder(anyhow!(
+                "There was no contentList"
+            )))?
             .children()
             .map(|elem| {
                 let attachments: Vec<_> = elem
@@ -112,5 +114,6 @@ impl BBAPIClient {
             })
             .filter(|r| r.is_ok())
             .collect::<anyhow::Result<Vec<_>>>()
+            .map_err(BBError::FailedToWebScrapeFolder)
     }
 }
