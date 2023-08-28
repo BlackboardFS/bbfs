@@ -1,27 +1,17 @@
-use crate::client::{BBAPIClient, BBError};
+use crate::{
+    client::{BBAPIClient, BBError},
+    CourseItem, CourseItemContent,
+};
 use anyhow::anyhow;
 use regex::Regex;
 use soup::prelude::*;
 
-#[derive(Debug)]
-pub struct Content {
-    pub title: String,
-    pub link: Option<String>,
-    pub description: Option<String>,
-    pub file_name: Option<String>,
-    // url
-    pub icon: String,
-    // vec of urls
-    pub attachments: Vec<String>,
-}
-
 impl BBAPIClient {
-    pub fn get_folder_contents(&self, html: &str) -> Result<Vec<Content>, BBError> {
-        // https://learn.uq.edu.au/webapps/blackboard/content/listContent.jsp?course_id={course_id}&content_id={content_id}&mode=reset
+    pub fn parse_folder_contents(html: &str) -> Result<Vec<CourseItem>, BBError> {
         let file = Regex::new(r".*/bbcswebdav/.*").unwrap();
-        let soup = Soup::new(html);
 
-        soup.tag("ul")
+        Soup::new(html)
+            .tag("ul")
             .attr("class", "contentList")
             .find()
             .ok_or(BBError::FailedToWebScrapeFolder(anyhow!(
@@ -78,39 +68,21 @@ impl BBAPIClient {
                     .get("src")
                     .ok_or(anyhow!("Icon had no src tag"))?;
 
-                let file_name = if link.clone().is_some_and(|l| file.is_match(&l)) {
-                    self.get_download_file_name(link.as_ref().unwrap()).ok()
-                } else if attachments.is_empty() && link.is_none() {
-                    Some(format!("{title}.txt"))
-                } else {
-                    None
-                };
-
                 // Replace / with - so that the fs doesnt explode
                 let re = Regex::new("/").unwrap();
                 let title = re.replace_all(&title, r"-").into();
-                let file_name = file_name.map(|file_name| re.replace_all(&file_name, r"-").into());
 
-                if attachments.len() == 1 && link.is_none() {
-                    let file_name = self.get_download_file_name(&attachments[0])?;
-                    Ok(Content {
-                        title: file_name.clone(),
-                        link: Some(attachments[0].clone()),
-                        description,
-                        file_name: Some(file_name),
-                        icon,
-                        attachments: vec![],
-                    })
-                } else {
-                    Ok(Content {
-                        title,
-                        link,
-                        description,
-                        file_name,
-                        icon,
-                        attachments,
-                    })
-                }
+                Ok(CourseItem {
+                    name: title,
+                    content: if attachments.len() == 1 && link.is_none() {
+                        Some(attachments[0].clone())
+                    } else {
+                        link
+                    }
+                    .map(CourseItemContent::from_url),
+                    description,
+                    attachments,
+                })
             })
             .filter(|r| r.is_ok())
             .collect::<anyhow::Result<Vec<_>>>()

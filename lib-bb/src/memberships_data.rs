@@ -1,23 +1,25 @@
 use serde::Deserialize;
-use time::{OffsetDateTime, PrimitiveDateTime};
+use time::OffsetDateTime;
+
+use crate::Course;
 
 #[derive(Deserialize)]
-pub struct MembershipsData {
-    pub results: Vec<CourseEntry>,
+pub struct CourseMemberships {
+    pub results: Vec<CourseMembership>,
 }
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct CourseEntry {
+pub struct CourseMembership {
     /// The one that looks like _1234587_1
     pub course_id: String,
-    pub course: Course,
+    pub course: CourseMembershipDetails,
 }
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Course {
-    /// The one that looks like ABCD1234S_1234_12345
+pub struct CourseMembershipDetails {
+    /// The one that looks like CSSE2310S_1234_12345
     #[serde(rename(deserialize = "courseId"))]
     pub short_name: String,
     pub display_name: String,
@@ -31,4 +33,14 @@ pub struct CourseTerm {
     pub start_date: Option<OffsetDateTime>,
     #[serde(with = "time::serde::rfc3339::option")]
     pub end_date: Option<OffsetDateTime>,
+}
+
+impl From<CourseMembership> for Course {
+    fn from(value: CourseMembership) -> Self {
+        Course {
+            short_name: value.course.short_name[..8].into(),
+            full_name: value.course.display_name,
+            id: value.course_id,
+        }
+    }
 }

@@ -2,53 +2,39 @@ use anyhow::anyhow;
 use regex::Regex;
 use soup::prelude::*;
 
-// https://learn.uq.edu.au/webapps/blackboard/execute/courseMain?course_id={course_id}
-// gives html that has the sidebar
+use crate::{client::BBAPIClient, CourseItem, CourseItemContent};
 
-#[derive(Debug)]
-pub struct SidebarEntry {
-    pub link: SidebarLink,
-    pub name: String,
-}
+impl BBAPIClient {
+    pub fn parse_course_sidebar(html: &str) -> anyhow::Result<Vec<CourseItem>> {
+        Soup::new(html)
+            .attr("class", "courseMenu")
+            .find()
+            .ok_or(anyhow!("Couldn't find courseMenu class item"))?
+            .tag("a")
+            .find_all()
+            .map(|a| {
+                let url = a
+                    .get("href")
+                    .ok_or(anyhow!("Some sidebar <a> tag didnt have a href?!?!?!"))?;
 
-#[derive(Debug)]
-pub enum SidebarLink {
-    Directory(String),
-    Link(String),
-}
-
-impl SidebarLink {
-    fn from_url(url: String) -> Self {
-        let re =
-            Regex::new(r"/webapps/blackboard/content/listContent.jsp\?course_id=.*&content_id=.*")
+                let re = Regex::new(
+                    r"/webapps/blackboard/content/listContent.jsp\?course_id=.*&content_id=.*",
+                )
                 .unwrap();
-        match re.is_match(&url) {
-            true => SidebarLink::Directory(url),
-            false => SidebarLink::Link(url),
-        }
+
+                let content = match re.is_match(&url) {
+                    true => CourseItemContent::FolderUrl(url),
+                    false => CourseItemContent::Link(url),
+                };
+                let name = a.text();
+
+                Ok(CourseItem {
+                    name,
+                    content: Some(content),
+                    description: None,
+                    attachments: vec![],
+                })
+            })
+            .collect::<anyhow::Result<Vec<_>>>()
     }
-}
-
-pub fn get_course_sidebar(html: &str) -> anyhow::Result<Vec<SidebarEntry>> {
-    let soup = Soup::new(html);
-
-    let side_bar = soup
-        .tag("ul")
-        .attr("class", "courseMenu")
-        .find()
-        .ok_or(anyhow!("Couldn't find courseMenu class item"))?
-        .tag("a")
-        .find_all()
-        .map(|a| {
-            let link = SidebarLink::from_url(
-                a.get("href")
-                    .ok_or(anyhow!("Some sidebar <a> tag didnt have a href?!?!?!"))?,
-            );
-            let name = a.text();
-
-            Ok(SidebarEntry { link, name })
-        })
-        .collect::<anyhow::Result<Vec<_>>>()?;
-
-    Ok(side_bar)
 }

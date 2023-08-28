@@ -1,7 +1,7 @@
-use crate::LINK_FILE_EXTRA_SIZE;
+use crate::LINK_FILE_EXT;
 use crate::{
-    course_main_data::get_course_sidebar, create_link_file, memberships_data::MembershipsData,
-    Course, CourseItem, CourseItemContent, User,
+    create_link_file, memberships_data::CourseMemberships, Course, CourseItem, CourseItemContent,
+    User,
 };
 use nix::errno::Errno;
 use pct_str::PctStr;
@@ -25,7 +25,7 @@ pub trait BBClient {
     fn get_size(&self, item: &Self::Item) -> Result<usize, Self::Error>;
     fn get_contents(&self, item: &Self::Item) -> Result<Vec<u8>, Self::Error>;
     fn get_type(&self, item: &Self::Item) -> ItemType;
-    fn get_name<'a>(&self, item: &'a Self::Item) -> &'a str;
+    fn get_name(&self, item: &Self::Item) -> Result<String, Self::Error>;
 }
 
 #[derive(PartialEq)]
@@ -113,7 +113,7 @@ impl BBAPIClient {
     fn get_courses(&self) -> Result<Vec<Course>, BBError> {
         let user_id = self.get_me()?.id;
         let json = self.get_page(BBPage::CourseList { user_id })?;
-        let memberships_data: MembershipsData =
+        let memberships_data: CourseMemberships =
             serde_json::from_str(&json).map_err(BBError::FailedToParseMemberships)?;
         Ok(memberships_data
             .results
@@ -139,7 +139,7 @@ impl BBAPIClient {
         let html = self.get_page(BBPage::Course {
             id: course.id.clone(),
         })?;
-        Ok(get_course_sidebar(&html)
+        Ok(Self::parse_course_sidebar(&html)
             .unwrap_or_default()
             .into_iter()
             .map(|entry| entry.into())
@@ -149,8 +149,7 @@ impl BBAPIClient {
     /// url should be from a CourseItemContent::Folder
     fn get_directory_contents(&self, url: String) -> Result<Vec<CourseItem>, BBError> {
         let html = self.get_page(BBPage::Folder { url })?;
-        Ok(self
-            .get_folder_contents(&html)?
+        Ok(Self::parse_folder_contents(&html)?
             .into_iter()
             .map(|entry| entry.into())
             .collect())
@@ -163,8 +162,7 @@ impl BBAPIClient {
                 let name = self.get_download_file_name(url)?;
 
                 Ok(CourseItem {
-                    name: name.clone(),
-                    file_name: Some(name),
+                    name,
                     content: Some(CourseItemContent::FileUrl(url.to_string())),
                     description: None,
                     attachments: vec![],
@@ -190,9 +188,8 @@ impl BBAPIClient {
                         .parse()
                         .map_err(|err| BBError::InvalidContentLengthHeader(err))?
                 }
-                //CourseItemContent::FolderUrl(_) => unreachable!(),
-                CourseItemContent::FolderUrl(_) => 0,
-                CourseItemContent::Link(url) => url.len() + LINK_FILE_EXTRA_SIZE,
+                CourseItemContent::FolderUrl(_) => unreachable!(),
+                CourseItemContent::Link(url) => create_link_file(url).len(),
             },
             None => match &item.description {
                 Some(desc) => desc.len(),
@@ -278,6 +275,7 @@ pub enum BBError {
 
 impl Into<Errno> for BBError {
     fn into(self) -> Errno {
+        eprintln!("{:?}", self);
         // TODO: Choose errnos more carefully
         match self {
             Self::FailedToGetPage(_, _)
@@ -323,9 +321,19 @@ impl BBClient for BBAPIClient {
                         .map(Item::CourseItem)
                         .collect(),
                 )),
-                Item::CourseItem(_course_item) => {
-                    todo!();
-                }
+                Item::CourseItem(course_item) => match &course_item.content {
+                    Some(CourseItemContent::Link(_)) | Some(CourseItemContent::FileUrl(_)) => {
+                        Ok(None)
+                    }
+                    Some(CourseItemContent::FolderUrl(url)) => Ok(Some(
+                        self.get_directory_contents(url.clone())?
+                            .into_iter()
+                            .map(Item::CourseItem)
+                            .collect(),
+                    )),
+                    // TODO: attachments
+                    None => Ok(None),
+                },
                 Item::SynthesizedDirectory(directory) => Ok(Some(directory.contents.clone())),
                 Item::SynthesizedFile(_) => Ok(None),
             }
@@ -355,19 +363,32 @@ impl BBClient for BBAPIClient {
     fn get_type(&self, item: &Item) -> ItemType {
         match item {
             Item::Course(_) | Item::SynthesizedDirectory(_) => ItemType::Directory,
-            Item::SynthesizedFile(_) | Item::CourseItem(_) => ItemType::File,
+            Item::SynthesizedFile(_) => ItemType::File,
+            Item::CourseItem(course_item) => match course_item.content {
+                Some(CourseItemContent::FileUrl(_)) | Some(CourseItemContent::Link(_)) => {
+                    ItemType::File
+                }
+                Some(CourseItemContent::FolderUrl(_)) => ItemType::Directory,
+                None => ItemType::File,
+            },
         }
     }
 
-    fn get_name<'a>(&self, item: &'a Item) -> &'a str {
-        match item {
-            Item::Course(course) => &course.short_name,
-            Item::SynthesizedDirectory(directory) => &directory.name,
-            Item::SynthesizedFile(file) => &file.name,
-            Item::CourseItem(course_item) => {
-                course_item.file_name.as_ref().unwrap_or(&course_item.name)
-            }
-        }
+    fn get_name(&self, item: &Item) -> Result<String, BBError> {
+        Ok(match item {
+            Item::Course(course) => course.short_name.clone(),
+            Item::SynthesizedDirectory(directory) => directory.name.clone(),
+            Item::SynthesizedFile(file) => file.name.clone(),
+            Item::CourseItem(course_item) => match &course_item.content {
+                Some(CourseItemContent::FileUrl(file)) => self.get_download_file_name(file)?,
+                Some(CourseItemContent::FolderUrl(_)) => course_item.name.clone(),
+                Some(CourseItemContent::Link(_)) => {
+                    format!("{}.{}", course_item.name, LINK_FILE_EXT)
+                }
+                // TODO: txt file extension when necessary
+                None => course_item.name.clone(),
+            },
+        })
     }
 }
 

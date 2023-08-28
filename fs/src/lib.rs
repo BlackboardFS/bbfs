@@ -244,7 +244,10 @@ impl<Client: BBClient> Filesystem for BBFS<Client> {
                         ItemType::File => FileType::RegularFile,
                         ItemType::Directory => FileType::Directory,
                     },
-                    name: self.client.get_name(&item).into(),
+                    name: match self.client.get_name(&item) {
+                        Ok(name) => name,
+                        Err(err) => return reply.error(err.into() as _),
+                    },
                     item,
                     children: None,
                 };
