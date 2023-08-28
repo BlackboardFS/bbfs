@@ -1,4 +1,5 @@
 use serde::Deserialize;
+use time::{OffsetDateTime, PrimitiveDateTime};
 
 #[derive(Deserialize)]
 pub struct MembershipsData {
@@ -10,7 +11,7 @@ pub struct MembershipsData {
 pub struct CourseEntry {
     /// The one that looks like _1234587_1
     pub course_id: String,
-    pub course: Course
+    pub course: Course,
 }
 
 #[derive(Deserialize)]
@@ -20,4 +21,14 @@ pub struct Course {
     #[serde(rename(deserialize = "courseId"))]
     pub short_name: String,
     pub display_name: String,
+    pub term: CourseTerm,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CourseTerm {
+    #[serde(with = "time::serde::rfc3339::option")]
+    pub start_date: Option<OffsetDateTime>,
+    #[serde(with = "time::serde::rfc3339::option")]
+    pub end_date: Option<OffsetDateTime>,
 }

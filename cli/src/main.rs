@@ -14,6 +14,9 @@ use lib_bb::client::BBAPIClient;
 #[derive(FromArgs)]
 /// A CLI tool to authenticate to and mount BlackboardFS
 struct BbfsCli {
+    /// show all enrolled courses
+    #[argh(switch, short = 'a')]
+    all: bool,
     /// runs fs service in foreground
     #[argh(switch, short = 'm')]
     monitor: bool,
@@ -49,7 +52,7 @@ fn main() -> anyhow::Result<()> {
         Daemon::new().stdout(stdout).stderr(stderr).start().unwrap();
     }
 
-    let client = BBAPIClient::new(cookies);
+    let client = BBAPIClient::new(cookies, args.all);
     fuser::mount2(
         BBFS::new(client),
         mount_point,

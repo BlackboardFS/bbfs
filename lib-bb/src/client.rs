@@ -6,6 +6,7 @@ use crate::{
 use nix::errno::Errno;
 use pct_str::PctStr;
 use std::{collections::HashMap, time::Duration};
+use time::OffsetDateTime;
 use ureq::{Agent, AgentBuilder};
 
 const BB_BASE_URL: &str = "https://learn.uq.edu.au";
@@ -48,11 +49,12 @@ impl BBPage {
 pub struct BBAPIClient {
     cookies: String,
     agent: Agent,
+    all_courses: bool,
     cache: HashMap<CourseItem, Vec<u8>>,
 }
 
 impl BBAPIClient {
-    pub fn new(cookies: String) -> Self {
+    pub fn new(cookies: String, all_courses: bool) -> Self {
         let agent: Agent = AgentBuilder::new()
             .timeout_read(Duration::from_secs(5))
             .timeout_write(Duration::from_secs(5))
@@ -60,6 +62,7 @@ impl BBAPIClient {
         Self {
             cookies,
             agent,
+            all_courses,
             cache: HashMap::new(),
         }
     }
@@ -96,10 +99,24 @@ impl BBClient for BBAPIClient {
         let user_id = self.get_me()?.id;
         let json = self.get_page(BBPage::CourseList { user_id })?;
         let memberships_data: MembershipsData =
-            serde_json::from_str(&json).map_err(|_| Errno::EIO)?;
+            // serde_json::from_str(&json).map_err(|_| Errno::EIO)?;
+            serde_json::from_str(&json).unwrap();
         Ok(memberships_data
             .results
             .into_iter()
+            .filter(|course_entry| {
+                self.all_courses || {
+                    let now = OffsetDateTime::now_utc();
+                    if let (Some(start), Some(end)) = (
+                        course_entry.course.term.start_date,
+                        course_entry.course.term.end_date,
+                    ) {
+                        start <= now && now <= end
+                    } else {
+                        false
+                    }
+                }
+            })
             .map(|course_entry| course_entry.into())
             .collect())
     }
@@ -218,7 +235,7 @@ mod tests {
     fn get_client() -> BBAPIClient {
         dotenv().ok();
         let cookies = env::var("BBCOOKIE").unwrap();
-        BBAPIClient::new(cookies)
+        BBAPIClient::new(cookies, true)
     }
 
     #[test]
