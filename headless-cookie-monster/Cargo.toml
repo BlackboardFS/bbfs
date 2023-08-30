@@ -1,0 +1,13 @@
+[package]
+name = "headless-cookie-monster"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = "1.0.75"
+fantoccini = "0.19.3"
+futures = "0.3.28"
+tokio = { version = "1.32.0", features = ["rt-multi-thread"] }
+url = "2.4.1"
