@@ -79,7 +79,7 @@ impl BbApiClient {
         }
     }
 
-    pub fn get_page(&self, page: BbPage) -> Result<String, BbError> {
+    fn get_page(&self, page: BbPage) -> Result<String, BbError> {
         self.agent
             .get(&page.url())
             .set("Cookie", &self.cookies)
@@ -89,12 +89,12 @@ impl BbApiClient {
             .map_err(|err| BbError::FailedToReadPageContents(page, err))
     }
 
-    pub fn get_me(&self) -> Result<User, BbError> {
+    fn get_me(&self) -> Result<User, BbError> {
         let json = self.get_page(BbPage::Me)?;
         serde_json::from_str(&json).map_err(BbError::FailedToParseMe)
     }
 
-    pub fn get_download_file_name(&self, url: &str) -> Result<String, BbError> {
+    fn get_download_file_name(&self, url: &str) -> Result<String, BbError> {
         let url = &format!("{}{}", BB_BASE_URL, url);
         let response = self
             .agent
@@ -151,22 +151,6 @@ impl BbApiClient {
         Ok(Self::parse_folder_contents(&html)?
             .into_iter()
             .collect())
-    }
-
-    fn get_attachment_directory(&self, item: &CourseItem) -> Result<Vec<CourseItem>, BbError> {
-        item.attachments
-            .iter()
-            .map(|url| {
-                let name = self.get_download_file_name(url)?;
-
-                Ok(CourseItem {
-                    name,
-                    content: Some(CourseItemContent::FileUrl(url.to_string())),
-                    description: None,
-                    attachments: vec![],
-                })
-            })
-            .collect()
     }
 
     fn get_course_item_size(&self, item: &CourseItem) -> Result<usize, BbError> {
@@ -239,14 +223,14 @@ impl BbApiClient {
 
 #[derive(Clone, Debug)]
 pub struct SynthesizedFile {
-    pub name: String,
-    pub contents: String,
+    name: String,
+    contents: String,
 }
 
 #[derive(Clone, Debug)]
 pub struct SynthesizedDirectory {
-    pub name: String,
-    pub contents: Vec<Item>,
+    name: String,
+    contents: Vec<Item>,
 }
 
 #[derive(Clone, Debug)]

@@ -1,36 +1,24 @@
-// https://learn.uq.edu.au/learn/api/v1/users/{user_id}/memberships for course names
-//
-// process:
-//
-// Authenticate with blackboard
-// Get list of courses
-// When in a course
-//  Get side bar
-//      Get items under sidebar
-
-#![allow(dead_code)]
-
 use regex::Regex;
 use serde::Deserialize;
 pub mod client;
 mod course_main_data;
 mod list_content_data;
-pub mod memberships_data;
-mod ultra_data;
+mod memberships_data;
 
 #[derive(Clone, Debug)]
 pub struct Course {
-    pub short_name: String,
-    pub full_name: String,
-    pub id: String,
+    // TODO make it so that we don't just take 8 from short_names (doesn't feel generic at all!)
+    // maybe this isn't needed though but it just feels weird
+    short_name: String,
+    id: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct CourseItem {
-    pub name: String,
-    pub content: Option<CourseItemContent>,
-    pub description: Option<String>,
-    pub attachments: Vec<String>,
+    name: String,
+    content: Option<CourseItemContent>,
+    description: Option<String>,
+    attachments: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -57,11 +45,8 @@ impl CourseItemContent {
 
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct User {
-    pub id: String,
-    pub given_name: String,
-    pub family_name: String,
-    pub user_name: String,
+struct User {
+    id: String,
 }
 
 #[cfg(target_os = "linux")]

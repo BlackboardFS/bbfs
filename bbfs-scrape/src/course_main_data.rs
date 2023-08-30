@@ -5,7 +5,7 @@ use soup::prelude::*;
 use crate::{client::BbApiClient, CourseItem, CourseItemContent};
 
 impl BbApiClient {
-    pub fn parse_course_sidebar(html: &str) -> anyhow::Result<Vec<CourseItem>> {
+    pub(crate) fn parse_course_sidebar(html: &str) -> anyhow::Result<Vec<CourseItem>> {
         Soup::new(html)
             .attr("class", "courseMenu")
             .find()
