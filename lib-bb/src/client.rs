@@ -319,11 +319,22 @@ impl BBClient for BBAPIClient {
             }
 
             match item {
-                Item::Course(course) => Ok(self
-                    .get_course_contents(course)?
-                    .into_iter()
-                    .map(Item::CourseItem)
-                    .collect()),
+                Item::Course(course) => {
+                    let link = format!("/ultra/courses/{}/cl/outline", course.id);
+
+                    let mut items: Vec<_> = self
+                        .get_course_contents(course)?
+                        .into_iter()
+                        .map(Item::CourseItem)
+                        .collect();
+
+                    items.push(Item::SynthesizedFile(SynthesizedFile {
+                        name: format!("Blackboard.{}", LINK_FILE_EXT),
+                        contents: create_link_file(&link),
+                    }));
+
+                    Ok(items)
+                }
                 Item::CourseItem(course_item) => {
                     let mut items: Vec<Item> = match &course_item.content {
                         Some(CourseItemContent::Link(link)) => {
@@ -383,6 +394,33 @@ impl BBClient for BBAPIClient {
                             }));
                         }
                     }
+
+                    let link = match &course_item.content {
+                        Some(CourseItemContent::FolderUrl(url)) => url.clone(),
+                        Some(CourseItemContent::Link(_) | CourseItemContent::FileUrl(_)) | None => {
+                            // Get a link to the parent
+                            match path[path.len() - 2] {
+                                Item::Course(course) => format!(
+                                    "https://learn.uq.edu.au/ultra/courses/{}/cl/outline",
+                                    course.id
+                                ),
+                                Item::CourseItem(item) => match &item.content {
+                                    Some(CourseItemContent::FolderUrl(url)) => url.clone(),
+                                    Some(CourseItemContent::FileUrl(_))
+                                    | Some(CourseItemContent::Link(_))
+                                    | None => unreachable!(),
+                                },
+                                Item::SynthesizedDirectory(_) | Item::SynthesizedFile(_) => {
+                                    unreachable!()
+                                }
+                            }
+                        }
+                    };
+
+                    items.push(Item::SynthesizedFile(SynthesizedFile {
+                        name: format!("Blackboard.{}", LINK_FILE_EXT),
+                        contents: create_link_file(&link),
+                    }));
 
                     Ok(items)
                 }

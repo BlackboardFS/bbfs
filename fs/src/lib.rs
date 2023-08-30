@@ -173,10 +173,14 @@ impl<Client: BBClient> Filesystem for BBFS<Client> {
 
         let inode = match self.inodes.get(&ino) {
             Some(inode) => inode,
-            None => return reply.error(ENOENT),
+            None => {
+                eprintln!("attempted to read from non-existent inode (ino={ino})");
+                return reply.error(ENOENT);
+            }
         };
 
         if self.client.get_type(&inode.item) != ItemType::File {
+            eprintln!("attempted to read a directory");
             return reply.error(EIO);
         }
 
@@ -191,10 +195,15 @@ impl<Client: BBClient> Filesystem for BBFS<Client> {
                     .get(offset..end_offset.min(contents.len()))
                     .ok_or(Errno::EIO)
                     .map(|contents| contents.to_vec())
+                    .map_err(|err| {
+                        eprintln!(
+                            "invalid offset ({offset}) for read of file of size {}",
+                            contents.len()
+                        );
+                        err
+                    })
             }) {
-            Ok(contents) => {
-                reply.data(&contents);
-            }
+            Ok(contents) => reply.data(&contents),
             Err(err) => reply.error(err as _),
         }
     }
@@ -212,18 +221,22 @@ impl<Client: BBClient> Filesystem for BBFS<Client> {
         let mut entries = vec![];
         entries.push((ino, FileType::Directory, "."));
 
-        let mut children = if let Some(inode) = self.inodes.get(&ino) {
+        let children = if let Some(inode) = self.inodes.get(&ino) {
             if self.client.get_type(&inode.item) != ItemType::Directory {
+                eprintln!("attempted to read directory contents of a file (ino={ino})");
                 return reply.error(EIO);
             }
 
             entries.push((inode.parent.unwrap_or(1), FileType::Directory, ".."));
             self.cached_children(&inode)
         } else {
+            eprintln!("attempted to read directory contents of non-existent inode (ino={ino})");
             return reply.error(ENOENT);
         };
 
-        if children.is_none() {
+        let children = if let Some(children) = children {
+            children
+        } else {
             let items = match self
                 .client
                 .get_children(self.path(&self.inodes[&ino]))
@@ -255,12 +268,7 @@ impl<Client: BBClient> Filesystem for BBFS<Client> {
             }
             self.inodes.get_mut(&ino).unwrap().children =
                 Some(inodes.iter().map(|inode| inode.ino).collect());
-            children = Some(self.cached_children(&self.inodes[&ino]).unwrap())
-        }
-
-        let children = match children {
-            Some(children) => children,
-            None => unreachable!(),
+            self.cached_children(&self.inodes[&ino]).unwrap()
         };
 
         children
