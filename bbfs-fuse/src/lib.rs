@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::time::{Duration, UNIX_EPOCH};
 
-use lib_bb::client::{BBClient, ItemType};
+use bbfs_scrape::client::{BbClient, ItemType};
 
 // TODO: Figure out the best TTL (if any)
 const TTL: Duration = Duration::from_secs(1);
@@ -56,14 +56,14 @@ struct ItemInode<Item> {
     children: Option<Vec<u64>>,
 }
 
-pub struct BBFS<Client: BBClient> {
+pub struct Bbfs<Client: BbClient> {
     client: Client,
     next_free_inode: RefCell<u64>,
     inodes: HashMap<u64, ItemInode<Client::Item>>,
 }
 
-impl<Client: BBClient> BBFS<Client> {
-    pub fn new(client: Client) -> Result<BBFS<Client>, Client::Error> {
+impl<Client: BbClient> Bbfs<Client> {
+    pub fn new(client: Client) -> Result<Bbfs<Client>, Client::Error> {
         let mut inodes = HashMap::new();
         inodes.insert(
             1,
@@ -76,7 +76,7 @@ impl<Client: BBClient> BBFS<Client> {
                 children: None,
             },
         );
-        Ok(BBFS {
+        Ok(Bbfs {
             client,
             next_free_inode: RefCell::new(2),
             inodes,
@@ -91,7 +91,7 @@ impl<Client: BBClient> BBFS<Client> {
     }
 }
 
-impl<Client: BBClient> BBFS<Client> {
+impl<Client: BbClient> Bbfs<Client> {
     fn attr(&self, inode: &ItemInode<Client::Item>) -> Result<FileAttr, Client::Error> {
         Ok(match self.client.get_type(&inode.item) {
             ItemType::File => fileattr(inode.ino, self.client.get_size(&inode.item)? as u64),
@@ -123,7 +123,7 @@ impl<Client: BBClient> BBFS<Client> {
     }
 }
 
-impl<Client: BBClient> Filesystem for BBFS<Client> {
+impl<Client: BbClient> Filesystem for Bbfs<Client> {
     fn lookup(&mut self, _req: &Request, parent: u64, name: &OsStr, reply: ReplyEntry) {
         let name = name.to_str().unwrap();
         println!("lookup(name={name})");

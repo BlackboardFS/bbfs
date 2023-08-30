@@ -2,9 +2,9 @@
 resolver = "2"
 
 members = [
-    "lib-bb",
-    "fs",
-    "cli",
+    "bbfs-scrape",
+    "bbfs-fuse",
+    "bbfs-cli",
     "cookie-monster",
 ]
 

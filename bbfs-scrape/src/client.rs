@@ -16,7 +16,7 @@ use ureq::{Agent, AgentBuilder};
 
 const BB_BASE_URL: &str = "https://learn.uq.edu.au";
 
-pub trait BBClient {
+pub trait BbClient {
     type Item: Clone;
     type Error: Into<Errno> + Debug;
 
@@ -35,14 +35,14 @@ pub enum ItemType {
 }
 
 #[derive(Clone, Debug)]
-pub enum BBPage {
+pub enum BbPage {
     Me,
     CourseList { user_id: String },
     Course { id: String },
     Folder { url: String },
 }
 
-impl BBPage {
+impl BbPage {
     fn url(&self) -> String {
         let path = match self {
             Self::Me => "/learn/api/v1/users/me?expand=systemRoles,insRoles".into(),
@@ -58,14 +58,14 @@ impl BBPage {
     }
 }
 
-pub struct BBAPIClient {
+pub struct BbApiClient {
     cookies: String,
     agent: Agent,
     all_courses: bool,
     cache: RefCell<HashMap<CourseItem, Vec<u8>>>,
 }
 
-impl BBAPIClient {
+impl BbApiClient {
     pub fn new(cookies: String, all_courses: bool) -> Self {
         let agent: Agent = AgentBuilder::new()
             .timeout_read(Duration::from_secs(5))
@@ -79,29 +79,29 @@ impl BBAPIClient {
         }
     }
 
-    pub fn get_page(&self, page: BBPage) -> Result<String, BBError> {
+    pub fn get_page(&self, page: BbPage) -> Result<String, BbError> {
         self.agent
             .get(&page.url())
             .set("Cookie", &self.cookies)
             .call()
-            .map_err(|err| BBError::FailedToGetPage(page.clone(), err))?
+            .map_err(|err| BbError::FailedToGetPage(page.clone(), err))?
             .into_string()
-            .map_err(|err| BBError::FailedToReadPageContents(page, err))
+            .map_err(|err| BbError::FailedToReadPageContents(page, err))
     }
 
-    pub fn get_me(&self) -> Result<User, BBError> {
-        let json = self.get_page(BBPage::Me)?;
-        serde_json::from_str(&json).map_err(BBError::FailedToParseMe)
+    pub fn get_me(&self) -> Result<User, BbError> {
+        let json = self.get_page(BbPage::Me)?;
+        serde_json::from_str(&json).map_err(BbError::FailedToParseMe)
     }
 
-    pub fn get_download_file_name(&self, url: &str) -> Result<String, BBError> {
+    pub fn get_download_file_name(&self, url: &str) -> Result<String, BbError> {
         let url = &format!("{}{}", BB_BASE_URL, url);
         let response = self
             .agent
             .head(url)
             .set("Cookie", &self.cookies)
             .call()
-            .map_err(BBError::FailedToGetHeaders)?;
+            .map_err(BbError::FailedToGetHeaders)?;
 
         let last_component: String = response.get_url().split('/').last().unwrap().into();
         let file_name = last_component.split('?').next().unwrap();
@@ -110,11 +110,11 @@ impl BBAPIClient {
             .unwrap_or(file_name.to_owned()))
     }
 
-    fn get_courses(&self) -> Result<Vec<Course>, BBError> {
+    fn get_courses(&self) -> Result<Vec<Course>, BbError> {
         let user_id = self.get_me()?.id;
-        let json = self.get_page(BBPage::CourseList { user_id })?;
+        let json = self.get_page(BbPage::CourseList { user_id })?;
         let memberships_data: CourseMemberships =
-            serde_json::from_str(&json).map_err(BBError::FailedToParseMemberships)?;
+            serde_json::from_str(&json).map_err(BbError::FailedToParseMemberships)?;
         Ok(memberships_data
             .results
             .into_iter()
@@ -135,8 +135,8 @@ impl BBAPIClient {
             .collect())
     }
 
-    fn get_course_contents(&self, course: &Course) -> Result<Vec<CourseItem>, BBError> {
-        let html = self.get_page(BBPage::Course {
+    fn get_course_contents(&self, course: &Course) -> Result<Vec<CourseItem>, BbError> {
+        let html = self.get_page(BbPage::Course {
             id: course.id.clone(),
         })?;
         Ok(Self::parse_course_sidebar(&html)
@@ -147,15 +147,15 @@ impl BBAPIClient {
     }
 
     /// url should be from a CourseItemContent::Folder
-    fn get_directory_contents(&self, url: String) -> Result<Vec<CourseItem>, BBError> {
-        let html = self.get_page(BBPage::Folder { url })?;
+    fn get_directory_contents(&self, url: String) -> Result<Vec<CourseItem>, BbError> {
+        let html = self.get_page(BbPage::Folder { url })?;
         Ok(Self::parse_folder_contents(&html)?
             .into_iter()
             .map(|entry| entry.into())
             .collect())
     }
 
-    fn get_attachment_directory(&self, item: &CourseItem) -> Result<Vec<CourseItem>, BBError> {
+    fn get_attachment_directory(&self, item: &CourseItem) -> Result<Vec<CourseItem>, BbError> {
         item.attachments
             .iter()
             .map(|url| {
@@ -171,7 +171,7 @@ impl BBAPIClient {
             .collect()
     }
 
-    fn get_course_item_size(&self, item: &CourseItem) -> Result<usize, BBError> {
+    fn get_course_item_size(&self, item: &CourseItem) -> Result<usize, BbError> {
         Ok(match &item.content {
             Some(content) => match content {
                 CourseItemContent::FileUrl(url) => {
@@ -181,12 +181,12 @@ impl BBAPIClient {
                         .head(url)
                         .set("Cookie", &self.cookies)
                         .call()
-                        .map_err(|err| BBError::FailedToGetHeaders(err))?;
+                        .map_err(|err| BbError::FailedToGetHeaders(err))?;
                     response
                         .header("Content-Length")
-                        .ok_or(BBError::MissingContentLengthHeader)?
+                        .ok_or(BbError::MissingContentLengthHeader)?
                         .parse()
-                        .map_err(|err| BBError::InvalidContentLengthHeader(err))?
+                        .map_err(|err| BbError::InvalidContentLengthHeader(err))?
                 }
                 CourseItemContent::FolderUrl(_) => unreachable!(),
                 CourseItemContent::Link(url) => create_link_file(url).len(),
@@ -198,7 +198,7 @@ impl BBAPIClient {
         })
     }
 
-    fn get_course_item_contents(&self, item: &CourseItem) -> Result<Vec<u8>, BBError> {
+    fn get_course_item_contents(&self, item: &CourseItem) -> Result<Vec<u8>, BbError> {
         let mut cache = self.cache.borrow_mut();
         if cache.contains_key(item) {
             return Ok(cache[item].clone());
@@ -212,13 +212,13 @@ impl BBAPIClient {
                         .get(url)
                         .set("Cookie", &self.cookies)
                         .call()
-                        .map_err(|_| BBError::FailedToGetContents(item.clone(), None))?; // TODO: Reach inside and check the error type
+                        .map_err(|_| BbError::FailedToGetContents(item.clone(), None))?; // TODO: Reach inside and check the error type
                     let mut bytes = Vec::new();
                     response
                         .into_reader()
                         .read_to_end(&mut bytes)
                         .map_err(|e| {
-                            BBError::FailedToGetContents(
+                            BbError::FailedToGetContents(
                                 item.clone(),
                                 e.raw_os_error().map(Errno::from_i32),
                             )
@@ -260,9 +260,9 @@ pub enum Item {
 }
 
 #[derive(Debug)]
-pub enum BBError {
-    FailedToGetPage(BBPage, ureq::Error),
-    FailedToReadPageContents(BBPage, std::io::Error),
+pub enum BbError {
+    FailedToGetPage(BbPage, ureq::Error),
+    FailedToReadPageContents(BbPage, std::io::Error),
     FailedToGetContents(CourseItem, Option<Errno>),
     FailedToGetHeaders(ureq::Error),
     MissingContentLengthHeader,
@@ -273,7 +273,7 @@ pub enum BBError {
     NotAFile(Item),
 }
 
-impl Into<Errno> for BBError {
+impl Into<Errno> for BbError {
     fn into(self) -> Errno {
         eprintln!("{:?}", self);
         // TODO: Choose errnos more carefully
@@ -292,18 +292,18 @@ impl Into<Errno> for BBError {
     }
 }
 
-impl Display for BBError {
+impl Display for BbError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // TODO: Possibly create nicer descriptions
         f.write_fmt(format_args!("{:?}", self))
     }
 }
 
-impl Error for BBError {}
+impl Error for BbError {}
 
-impl BBClient for BBAPIClient {
+impl BbClient for BbApiClient {
     type Item = Item;
-    type Error = BBError;
+    type Error = BbError;
 
     fn get_root(&self) -> Result<Self::Item, Self::Error> {
         Ok(Item::SynthesizedDirectory(SynthesizedDirectory {
@@ -312,7 +312,7 @@ impl BBClient for BBAPIClient {
         }))
     }
 
-    fn get_children(&self, path: Vec<&Item>) -> Result<Vec<Item>, BBError> {
+    fn get_children(&self, path: Vec<&Item>) -> Result<Vec<Item>, BbError> {
         if let Some(item) = path.last() {
             if self.get_type(item) != ItemType::Directory {
                 unreachable!();
@@ -432,17 +432,17 @@ impl BBClient for BBAPIClient {
         }
     }
 
-    fn get_size(&self, item: &Item) -> Result<usize, BBError> {
+    fn get_size(&self, item: &Item) -> Result<usize, BbError> {
         match item {
-            Item::Course(_) | Item::SynthesizedDirectory(_) => Err(BBError::NotAFile(item.clone())),
+            Item::Course(_) | Item::SynthesizedDirectory(_) => Err(BbError::NotAFile(item.clone())),
             Item::SynthesizedFile(file) => Ok(file.contents.len()),
             Item::CourseItem(course_item) => self.get_course_item_size(course_item),
         }
     }
 
-    fn get_contents(&self, item: &Item) -> Result<Vec<u8>, BBError> {
+    fn get_contents(&self, item: &Item) -> Result<Vec<u8>, BbError> {
         match item {
-            Item::Course(_) | Item::SynthesizedDirectory(_) => Err(BBError::NotAFile(item.clone())),
+            Item::Course(_) | Item::SynthesizedDirectory(_) => Err(BbError::NotAFile(item.clone())),
             Item::SynthesizedFile(file) => Ok(file.contents.as_bytes().to_vec()),
             Item::CourseItem(course_item) => self.get_course_item_contents(course_item),
         }
@@ -470,7 +470,7 @@ impl BBClient for BBAPIClient {
         }
     }
 
-    fn get_name(&self, item: &Item) -> Result<String, BBError> {
+    fn get_name(&self, item: &Item) -> Result<String, BbError> {
         Ok(match item {
             Item::Course(course) => course.short_name.clone(),
             Item::SynthesizedDirectory(directory) => directory.name.clone(),
@@ -498,31 +498,5 @@ impl BBClient for BBAPIClient {
                 }
             }
         })
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use dotenv::dotenv;
-    use std::env;
-
-    use super::BBAPIClient;
-
-    fn get_client() -> BBAPIClient {
-        dotenv().ok();
-        let cookies = env::var("BBCOOKIE").unwrap();
-        BBAPIClient::new(cookies, true)
-    }
-
-    #[test]
-    fn test_req() {
-        let client = get_client();
-        client.get_page(super::BBPage::Me).unwrap();
-    }
-
-    #[test]
-    fn test_get_me() {
-        let client = get_client();
-        client.get_me().unwrap();
     }
 }

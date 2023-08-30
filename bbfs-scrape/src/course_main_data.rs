@@ -2,9 +2,9 @@ use anyhow::anyhow;
 use regex::Regex;
 use soup::prelude::*;
 
-use crate::{client::BBAPIClient, CourseItem, CourseItemContent};
+use crate::{client::BbApiClient, CourseItem, CourseItemContent};
 
-impl BBAPIClient {
+impl BbApiClient {
     pub fn parse_course_sidebar(html: &str) -> anyhow::Result<Vec<CourseItem>> {
         Soup::new(html)
             .attr("class", "courseMenu")

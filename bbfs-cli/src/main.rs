@@ -8,8 +8,8 @@ use etcetera::BaseStrategy;
 use fuser::MountOption;
 use url::Url;
 
-use fs::BBFS;
-use lib_bb::client::BBAPIClient;
+use bbfs_fuse::Bbfs;
+use bbfs_scrape::client::BbApiClient;
 
 #[derive(FromArgs)]
 /// A CLI tool to authenticate to and mount BlackboardFS
@@ -52,9 +52,9 @@ fn main() -> anyhow::Result<()> {
         Daemon::new().stdout(stdout).stderr(stderr).start().unwrap();
     }
 
-    let client = BBAPIClient::new(cookies, args.all);
+    let client = BbApiClient::new(cookies, args.all);
     fuser::mount2(
-        BBFS::new(client).expect("failed to initialize Blackboard client"),
+        Bbfs::new(client).expect("failed to initialize Blackboard client"),
         mount_point,
         &[MountOption::AutoUnmount, MountOption::RO],
     )

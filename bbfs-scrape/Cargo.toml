@@ -1,5 +1,5 @@
 [package]
-name = "lib-bb"
+name = "bbfs-scrape"
 version = "0.1.0"
 edition = "2021"
 

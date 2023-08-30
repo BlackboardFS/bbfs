@@ -1,5 +1,5 @@
 [package]
-name = "cli"
+name = "bbfs-cli"
 version = "0.1.0"
 edition = "2021"
 
@@ -14,10 +14,10 @@ cookie-monster = { path = "../cookie-monster" }
 cookie_store = "^0.19"
 daemonize-me = "2.0.1"
 etcetera = "0.8.0"
-fs = { path = "../fs" }
+bbfs-fuse = { path = "../bbfs-fuse" }
 fuser = "0.13.0"
-lib-bb = { path = "../lib-bb" }
+bbfs-scrape = { path = "../bbfs-scrape" }
 serde = { version = "1.0.187", features = ["derive"] }
 serde_json = "1.0.105"
-ureq = { path = "../ureq" }
+ureq = "2.7.1"
 url = "2.4.0"

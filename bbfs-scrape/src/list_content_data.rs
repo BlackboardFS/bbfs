@@ -1,20 +1,20 @@
 use crate::{
-    client::{BBAPIClient, BBError},
+    client::{BbApiClient, BbError},
     CourseItem, CourseItemContent,
 };
 use anyhow::anyhow;
 use regex::Regex;
 use soup::prelude::*;
 
-impl BBAPIClient {
-    pub fn parse_folder_contents(html: &str) -> Result<Vec<CourseItem>, BBError> {
+impl BbApiClient {
+    pub fn parse_folder_contents(html: &str) -> Result<Vec<CourseItem>, BbError> {
         let file = Regex::new(r".*/bbcswebdav/.*").unwrap();
 
         Soup::new(html)
             .tag("ul")
             .attr("class", "contentList")
             .find()
-            .ok_or(BBError::FailedToWebScrapeFolder(anyhow!(
+            .ok_or(BbError::FailedToWebScrapeFolder(anyhow!(
                 "There was no contentList"
             )))?
             .children()
@@ -86,6 +86,6 @@ impl BBAPIClient {
             })
             .filter(|r| r.is_ok())
             .collect::<anyhow::Result<Vec<_>>>()
-            .map_err(BBError::FailedToWebScrapeFolder)
+            .map_err(BbError::FailedToWebScrapeFolder)
     }
 }
