@@ -228,7 +228,7 @@ impl<Client: BbClient> Filesystem for Bbfs<Client> {
             }
 
             entries.push((inode.parent.unwrap_or(1), FileType::Directory, ".."));
-            self.cached_children(&inode)
+            self.cached_children(inode)
         } else {
             eprintln!("attempted to read directory contents of non-existent inode (ino={ino})");
             return reply.error(ENOENT);

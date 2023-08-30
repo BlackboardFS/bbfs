@@ -84,7 +84,7 @@ impl BbApiClient {
             .get(&page.url())
             .set("Cookie", &self.cookies)
             .call()
-            .map_err(|err| BbError::FailedToGetPage(page.clone(), err))?
+            .map_err(|err| BbError::FailedToGetPage(page.clone(), Box::new(err)))?
             .into_string()
             .map_err(|err| BbError::FailedToReadPageContents(page, err))
     }
@@ -101,7 +101,7 @@ impl BbApiClient {
             .head(url)
             .set("Cookie", &self.cookies)
             .call()
-            .map_err(BbError::FailedToGetHeaders)?;
+            .map_err(|e| BbError::FailedToGetHeaders(Box::new(e)))?;
 
         let last_component: String = response.get_url().split('/').last().unwrap().into();
         let file_name = last_component.split('?').next().unwrap();
@@ -142,7 +142,6 @@ impl BbApiClient {
         Ok(Self::parse_course_sidebar(&html)
             .unwrap_or_default()
             .into_iter()
-            .map(|entry| entry.into())
             .collect())
     }
 
@@ -151,7 +150,6 @@ impl BbApiClient {
         let html = self.get_page(BbPage::Folder { url })?;
         Ok(Self::parse_folder_contents(&html)?
             .into_iter()
-            .map(|entry| entry.into())
             .collect())
     }
 
@@ -181,12 +179,12 @@ impl BbApiClient {
                         .head(url)
                         .set("Cookie", &self.cookies)
                         .call()
-                        .map_err(|err| BbError::FailedToGetHeaders(err))?;
+                        .map_err(|err| BbError::FailedToGetHeaders(Box::new(err)))?;
                     response
                         .header("Content-Length")
                         .ok_or(BbError::MissingContentLengthHeader)?
                         .parse()
-                        .map_err(|err| BbError::InvalidContentLengthHeader(err))?
+                        .map_err(BbError::InvalidContentLengthHeader)?
                 }
                 CourseItemContent::FolderUrl(_) => unreachable!(),
                 CourseItemContent::Link(url) => create_link_file(url).len(),
@@ -261,10 +259,10 @@ pub enum Item {
 
 #[derive(Debug)]
 pub enum BbError {
-    FailedToGetPage(BbPage, ureq::Error),
+    FailedToGetPage(BbPage, Box<ureq::Error>),
     FailedToReadPageContents(BbPage, std::io::Error),
     FailedToGetContents(CourseItem, Option<Errno>),
-    FailedToGetHeaders(ureq::Error),
+    FailedToGetHeaders(Box<ureq::Error>),
     MissingContentLengthHeader,
     InvalidContentLengthHeader(ParseIntError),
     FailedToWebScrapeFolder(anyhow::Error),
@@ -273,21 +271,21 @@ pub enum BbError {
     NotAFile(Item),
 }
 
-impl Into<Errno> for BbError {
-    fn into(self) -> Errno {
-        eprintln!("{:?}", self);
+impl From<BbError> for Errno {
+    fn from(val: BbError) -> Self {
+        eprintln!("{:?}", val);
         // TODO: Choose errnos more carefully
-        match self {
-            Self::FailedToGetPage(_, _)
-            | Self::FailedToGetContents(_, _)
-            | Self::FailedToGetHeaders(_) => Errno::ENETRESET,
-            Self::FailedToReadPageContents(_, _)
-            | Self::MissingContentLengthHeader
-            | Self::InvalidContentLengthHeader(_)
-            | Self::FailedToWebScrapeFolder(_)
-            | Self::FailedToParseMemberships(_)
-            | Self::FailedToParseMe(_)
-            | Self::NotAFile(_) => Errno::EIO,
+        match val {
+            BbError::FailedToGetPage(_, _)
+            | BbError::FailedToGetContents(_, _)
+            | BbError::FailedToGetHeaders(_) => Errno::ENETRESET,
+            BbError::FailedToReadPageContents(_, _)
+            | BbError::MissingContentLengthHeader
+            | BbError::InvalidContentLengthHeader(_)
+            | BbError::FailedToWebScrapeFolder(_)
+            | BbError::FailedToParseMemberships(_)
+            | BbError::FailedToParseMe(_)
+            | BbError::NotAFile(_) => Errno::EIO,
         }
     }
 }

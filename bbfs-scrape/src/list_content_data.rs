@@ -8,8 +8,6 @@ use soup::prelude::*;
 
 impl BbApiClient {
     pub fn parse_folder_contents(html: &str) -> Result<Vec<CourseItem>, BbError> {
-        let file = Regex::new(r".*/bbcswebdav/.*").unwrap();
-
         Soup::new(html)
             .tag("ul")
             .attr("class", "contentList")
@@ -60,6 +58,7 @@ impl BbApiClient {
                     })
                     .filter(|s: &String| !s.is_empty());
 
+                /*
                 let icon = elem
                     .tag("img")
                     .attr("class", "item_icon")
@@ -67,6 +66,7 @@ impl BbApiClient {
                     .ok_or(anyhow!("Item had no icon"))?
                     .get("src")
                     .ok_or(anyhow!("Icon had no src tag"))?;
+                    */
 
                 // Replace / with - so that the fs doesnt explode
                 let re = Regex::new("/").unwrap();
