@@ -7,8 +7,6 @@ mod memberships_data;
 
 #[derive(Clone, Debug)]
 pub struct Course {
-    // TODO make it so that we don't just take 8 from short_names (doesn't feel generic at all!)
-    // maybe this isn't needed though but it just feels weird
     short_name: String,
     id: String,
 }
@@ -19,6 +17,65 @@ pub struct CourseItem {
     content: Option<CourseItemContent>,
     description: Option<String>,
     attachments: Vec<String>,
+}
+
+impl CourseItem {
+    fn attachments_as_items(&self) -> Vec<Item> {
+        self.attachments
+            .iter()
+            .map(|attachment| {
+                Item::CourseItem(CourseItem {
+                    name: "".into(),
+                    content: Some(CourseItemContent::FileUrl(attachment.clone())),
+                    description: None,
+                    attachments: vec![],
+                })
+            })
+            .collect()
+    }
+
+    fn maybe_new_description_file(&self) -> Option<Item> {
+        self.description.as_ref().map(|description| {
+            Item::SynthesizedFile(SynthesizedFile {
+                name: self.name.clone(),
+                contents: description.clone(),
+            })
+        })
+    }
+
+    fn maybe_new_link_file(&self) -> Option<Item> {
+        match &self.content {
+            Some(CourseItemContent::Link(link)) if !self.attachments.is_empty() => {
+                Some(Item::SynthesizedFile(SynthesizedFile {
+                    name: format!("{}.{}", self.name, LINK_FILE_EXT),
+                    contents: create_link_file(link),
+                }))
+            }
+            _ => None,
+        }
+    }
+
+    fn get_blackboard_link(&self, parent: &Item) -> String {
+        match &self.content {
+            Some(CourseItemContent::FolderUrl(url)) => url.clone(),
+            Some(CourseItemContent::Link(_) | CourseItemContent::FileUrl(_)) | None => match parent
+            {
+                Item::Course(ref course) => format!(
+                    "https://learn.uq.edu.au/ultra/courses/{}/cl/outline",
+                    course.id
+                ),
+                Item::CourseItem(ref item) => match &item.content {
+                    Some(CourseItemContent::FolderUrl(url)) => url.clone(),
+                    Some(CourseItemContent::FileUrl(_))
+                    | Some(CourseItemContent::Link(_))
+                    | None => unreachable!(),
+                },
+                Item::SynthesizedDirectory(_) | Item::SynthesizedFile(_) => {
+                    unreachable!()
+                }
+            },
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -40,6 +97,35 @@ impl CourseItemContent {
         } else {
             CourseItemContent::Link(url)
         }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct SynthesizedFile {
+    name: String,
+    contents: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct SynthesizedDirectory {
+    name: String,
+    contents: Vec<Item>,
+}
+
+#[derive(Clone, Debug)]
+pub enum Item {
+    Course(Course),
+    CourseItem(CourseItem),
+    SynthesizedFile(SynthesizedFile),
+    SynthesizedDirectory(SynthesizedDirectory),
+}
+
+impl Item {
+    fn make_link_file(name: &str, link: &str) -> Item {
+        Item::SynthesizedFile(SynthesizedFile {
+            name: format!("{name}.{LINK_FILE_EXT}"),
+            contents: create_link_file(&link),
+        })
     }
 }
 

@@ -1,7 +1,6 @@
-use crate::LINK_FILE_EXT;
 use crate::{
     create_link_file, memberships_data::CourseMemberships, Course, CourseItem, CourseItemContent,
-    User,
+    Item, SynthesizedDirectory, SynthesizedFile, User, LINK_FILE_EXT,
 };
 use nix::errno::Errno;
 use pct_str::PctStr;
@@ -148,9 +147,7 @@ impl BbApiClient {
     /// url should be from a CourseItemContent::Folder
     fn get_directory_contents(&self, url: String) -> Result<Vec<CourseItem>, BbError> {
         let html = self.get_page(BbPage::Folder { url })?;
-        Ok(Self::parse_folder_contents(&html)?
-            .into_iter()
-            .collect())
+        Ok(Self::parse_folder_contents(&html)?.into_iter().collect())
     }
 
     fn get_course_item_size(&self, item: &CourseItem) -> Result<usize, BbError> {
@@ -219,26 +216,6 @@ impl BbApiClient {
         cache.insert(item.clone(), bytes.clone());
         Ok(bytes)
     }
-}
-
-#[derive(Clone, Debug)]
-pub struct SynthesizedFile {
-    name: String,
-    contents: String,
-}
-
-#[derive(Clone, Debug)]
-pub struct SynthesizedDirectory {
-    name: String,
-    contents: Vec<Item>,
-}
-
-#[derive(Clone, Debug)]
-pub enum Item {
-    Course(Course),
-    CourseItem(CourseItem),
-    SynthesizedFile(SynthesizedFile),
-    SynthesizedDirectory(SynthesizedDirectory),
 }
 
 #[derive(Debug)]
@@ -310,20 +287,14 @@ impl BbClient for BbApiClient {
                         .map(Item::CourseItem)
                         .collect();
 
-                    items.push(Item::SynthesizedFile(SynthesizedFile {
-                        name: format!("Blackboard.{}", LINK_FILE_EXT),
-                        contents: create_link_file(&link),
-                    }));
+                    items.push(Item::make_link_file("Blackboard", &link));
 
                     Ok(items)
                 }
                 Item::CourseItem(course_item) => {
                     let mut items: Vec<Item> = match &course_item.content {
                         Some(CourseItemContent::Link(link)) => {
-                            vec![Item::SynthesizedFile(SynthesizedFile {
-                                name: format!("{}.{}", course_item.name, LINK_FILE_EXT),
-                                contents: create_link_file(link),
-                            })]
+                            vec![Item::make_link_file(&course_item.name, link)]
                         }
                         Some(CourseItemContent::FileUrl(url)) => {
                             vec![Item::CourseItem(CourseItem {
@@ -338,71 +309,18 @@ impl BbClient for BbApiClient {
                             .into_iter()
                             .map(Item::CourseItem)
                             .collect(),
-                        // TODO: attachments
                         None => vec![],
                     };
 
-                    if !course_item.attachments.is_empty() {
-                        items.append(
-                            &mut course_item
-                                .attachments
-                                .iter()
-                                .map(|attachment| {
-                                    Item::CourseItem(CourseItem {
-                                        name: "".into(),
-                                        content: Some(CourseItemContent::FileUrl(
-                                            attachment.clone(),
-                                        )),
-                                        description: None,
-                                        attachments: vec![],
-                                    })
-                                })
-                                .collect(),
-                        );
-                    }
+                    items.append(&mut course_item.attachments_as_items());
 
-                    if let Some(description) = &course_item.description {
-                        items.push(Item::SynthesizedFile(SynthesizedFile {
-                            name: format!("{}.txt", course_item.name),
-                            contents: description.clone(),
-                        }));
-                    }
+                    items.extend(course_item.maybe_new_description_file());
 
-                    if let Some(CourseItemContent::Link(link)) = &course_item.content {
-                        if !course_item.attachments.is_empty() {
-                            items.push(Item::SynthesizedFile(SynthesizedFile {
-                                name: format!("{}.{}", course_item.name, LINK_FILE_EXT),
-                                contents: create_link_file(link),
-                            }));
-                        }
-                    }
+                    items.extend(course_item.maybe_new_link_file());
 
-                    let link = match &course_item.content {
-                        Some(CourseItemContent::FolderUrl(url)) => url.clone(),
-                        Some(CourseItemContent::Link(_) | CourseItemContent::FileUrl(_)) | None => {
-                            // Get a link to the parent
-                            match path[path.len() - 2] {
-                                Item::Course(course) => format!(
-                                    "https://learn.uq.edu.au/ultra/courses/{}/cl/outline",
-                                    course.id
-                                ),
-                                Item::CourseItem(item) => match &item.content {
-                                    Some(CourseItemContent::FolderUrl(url)) => url.clone(),
-                                    Some(CourseItemContent::FileUrl(_))
-                                    | Some(CourseItemContent::Link(_))
-                                    | None => unreachable!(),
-                                },
-                                Item::SynthesizedDirectory(_) | Item::SynthesizedFile(_) => {
-                                    unreachable!()
-                                }
-                            }
-                        }
-                    };
+                    let link = course_item.get_blackboard_link(path[path.len() - 2]);
 
-                    items.push(Item::SynthesizedFile(SynthesizedFile {
-                        name: format!("Blackboard.{}", LINK_FILE_EXT),
-                        contents: create_link_file(&link),
-                    }));
+                    items.push(Item::make_link_file("Blackboard", &link));
 
                     Ok(items)
                 }
