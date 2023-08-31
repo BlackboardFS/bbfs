@@ -30,7 +30,10 @@ async fn wait_for_error_alert(client: &Client) -> anyhow::Result<Element> {
         .await?)
 }
 
-async fn complete_auth(client: &Client) -> anyhow::Result<()> {
+async fn complete_auth<DuoF: Fn(&str) -> ()>(
+    client: &Client,
+    handle_duo_code: DuoF,
+) -> anyhow::Result<()> {
     let duo_task = wait_for_duo_code(client).fuse();
     let completion_task = wait_for_completion(client).fuse();
     let failure_task = wait_for_error_alert(client).fuse();
@@ -43,7 +46,7 @@ async fn complete_auth(client: &Client) -> anyhow::Result<()> {
                 .text()
                 .await?;
 
-            println!("Your duo code is {}", duo_code);
+            handle_duo_code(&duo_code);
             wait_for_completion(client).await
         }
         _ = completion_task => Ok(()),
@@ -53,7 +56,11 @@ async fn complete_auth(client: &Client) -> anyhow::Result<()> {
     }
 }
 
-pub fn eat_user_cookies(username: &str, password: &str) -> anyhow::Result<String> {
+pub fn eat_user_cookies<DuoF: Fn(&str) -> ()>(
+    username: &str,
+    password: &str,
+    handle_duo_code: DuoF,
+) -> anyhow::Result<String> {
     // Ensure that webdriver is installed
     let strategy = choose_base_strategy().unwrap();
     let data_dir = {
@@ -127,7 +134,7 @@ pub fn eat_user_cookies(username: &str, password: &str) -> anyhow::Result<String
             password_field.send_keys(password).await?;
             submit_button.click().await?;
 
-            match complete_auth(&c).await {
+            match complete_auth(&c, handle_duo_code).await {
                 Ok(()) => {}
                 Err(err) => {
                     c.close().await?;
