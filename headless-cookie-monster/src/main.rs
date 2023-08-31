@@ -13,7 +13,9 @@ fn main() {
     let _ = stdout().flush();
     let password = read_password().expect("expected password");
 
-    match eat_user_cookies(&username, &password) {
+    match eat_user_cookies(&username, &password, |duo_code| {
+        println!("Your duo code is {}", duo_code)
+    }) {
         Ok(cookies) => println!("{}", cookies),
         Err(err) => {
             eprintln!("{:?}", err);
