@@ -93,8 +93,7 @@ Clone this repo to a location of your choosing. Then
 ```
 git submodule update && git submodule init
 ```
-to use the patched version of `ureq`. You can then `cargo run -p bbfs-cli` or `cargo install --bin bbfs-cli`
-as you wish.
+You can then `cargo run -p bbfs-cli` or `cargo install --bin bbfs-cli` as you wish.
 
 ## Usage
 
