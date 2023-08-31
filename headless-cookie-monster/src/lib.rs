@@ -1,6 +1,9 @@
 use anyhow::anyhow;
+use etcetera::{choose_base_strategy, BaseStrategy};
 use fantoccini::{elements::Element, Client, ClientBuilder, Locator};
 use futures::{future::FutureExt, pin_mut, select};
+use std::io::prelude::*;
+use std::process::Command;
 use url::Url;
 
 async fn wait_for_completion(client: &Client) -> anyhow::Result<()> {
@@ -51,7 +54,38 @@ async fn complete_auth(client: &Client) -> anyhow::Result<()> {
 }
 
 pub fn eat_user_cookies(username: &str, password: &str) -> anyhow::Result<String> {
-    tokio::runtime::Builder::new_multi_thread()
+    // Ensure that webdriver is installed
+    let strategy = choose_base_strategy().unwrap();
+    let data_dir = {
+        let mut data_dir = strategy.data_dir();
+        data_dir.push("blackboardfs");
+        std::fs::create_dir_all(&data_dir).expect("failed to create data dir");
+        data_dir
+    };
+
+    webdriver_install::Driver::Gecko
+        .install_into(data_dir.clone())
+        .map_err(|err| anyhow!(format!("failed to install gecko webdriver: {:?}", err)))?;
+
+    let mut driver_path = data_dir;
+    driver_path.push("geckodriver");
+
+    // Run the webdriver
+    let mut driver = Command::new(driver_path)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("failed to run geckodriver");
+
+    let driver_stdout = driver.stdout.as_mut().unwrap();
+    let reader = std::io::BufReader::new(driver_stdout);
+    reader
+        .lines()
+        .next()
+        .expect("expected first line of webdriver output")
+        .expect("expected first line of webdriver output");
+
+    let result = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
         .unwrap()
@@ -116,5 +150,9 @@ pub fn eat_user_cookies(username: &str, password: &str) -> anyhow::Result<String
             c.close().await?;
 
             Ok(megacookie)
-        })
+        });
+
+    driver.kill().expect("failed to kill webdriver");
+
+    result
 }
