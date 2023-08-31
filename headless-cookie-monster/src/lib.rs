@@ -56,7 +56,16 @@ pub fn eat_user_cookies(username: &str, password: &str) -> anyhow::Result<String
         .build()
         .unwrap()
         .block_on(async {
+            let mut firefox_options = serde_json::Map::<String, serde_json::Value>::new();
+            firefox_options.insert("args".into(), vec!["-headless"].into());
+            let mut capabilities = serde_json::Map::<String, serde_json::Value>::new();
+            capabilities.insert(
+                "moz:firefoxOptions".into(),
+                serde_json::Value::Object(firefox_options),
+            );
+
             let c = ClientBuilder::native()
+                .capabilities(capabilities)
                 .connect("http://localhost:4444")
                 .await
                 .expect("failed to connect to WebDriver");
