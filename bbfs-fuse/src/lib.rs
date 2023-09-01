@@ -1,11 +1,13 @@
 use fuser::{
-    FileAttr, FileType, Filesystem, ReplyAttr, ReplyData, ReplyDirectory, ReplyEntry, Request,
+    FileAttr, FileType, Filesystem, MountOption, ReplyAttr, ReplyData, ReplyDirectory, ReplyEntry,
+    Request,
 };
 use libc::{EIO, ENOENT};
 use nix::errno::Errno;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::ffi::OsStr;
+use std::path::PathBuf;
 use std::time::{Duration, UNIX_EPOCH};
 
 use bbfs_scrape::client::{BbClient, ItemType};
@@ -83,15 +85,22 @@ impl<Client: BbClient> Bbfs<Client> {
         })
     }
 
+    pub fn mount(self, mount_point: &PathBuf) -> anyhow::Result<()> {
+        fuser::mount2(
+            self,
+            mount_point,
+            &[MountOption::AutoUnmount, MountOption::RO],
+        )
+        .map_err(|err| err.into())
+    }
+
     fn get_free_inode(&self) -> u64 {
         let mut inode = self.next_free_inode.borrow_mut();
         let free_inode = *inode;
         *inode += 1;
         free_inode
     }
-}
 
-impl<Client: BbClient> Bbfs<Client> {
     fn attr(&self, inode: &ItemInode<Client::Item>) -> Result<FileAttr, Client::Error> {
         Ok(match self.client.get_type(&inode.item) {
             ItemType::File => fileattr(inode.ino, self.client.get_size(&inode.item)? as u64),
