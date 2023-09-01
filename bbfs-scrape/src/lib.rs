@@ -18,6 +18,9 @@ mod list_content_data;
 pub mod memberships_data;
 mod ultra_data;
 
+// TODO: Update all hardcoded URLs to use this.
+pub const BB_BASE_URL: &str = "https://learn.uq.edu.au";
+
 #[derive(Clone, Debug)]
 pub struct Course {
     pub short_name: String,
@@ -71,9 +74,9 @@ pub fn create_link_file(hyperlink: &str) -> String {
 [Desktop Entry]
 Encoding=UTF-8
 Type=Link
-URL=https://learn.uq.edu.au{hyperlink}
+URL={BB_BASE_URL}{hyperlink}
 Icon=text-html
-"
+",
     )
 }
 
@@ -82,7 +85,7 @@ pub const LINK_FILE_EXT: &str = "desktop";
 
 #[cfg(target_os = "macos")]
 pub fn create_link_file(hyperlink: &str) -> String {
-    format!("{{ URL = \"https://learn.uq.edu.au{hyperlink}\"; }}")
+    format!("{{ URL = \"{BB_BASE_URL}{hyperlink}\"; }}")
 }
 
 #[cfg(target_os = "macos")]

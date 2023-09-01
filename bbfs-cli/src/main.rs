@@ -1,12 +1,12 @@
 use std::fs::File;
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
+use anyhow::anyhow;
 use argh::FromArgs;
+use cookie_monster::{is_cookie_valid, CookieMonster, HeadlessCookieMonster, WebViewCookieMonster};
 use daemonize_me::Daemon;
 use etcetera::BaseStrategy;
-use fuser::MountOption;
-use url::Url;
 
 use bbfs_fuse::Bbfs;
 use bbfs_scrape::client::BbApiClient;
@@ -20,100 +20,77 @@ struct BbfsCli {
     /// runs fs service in foreground
     #[argh(switch, short = 'm')]
     monitor: bool,
+    /// uses headless auth flow
+    #[argh(switch)]
+    headless: bool,
     /// the path to mount the Blackboard filesystem at
     #[argh(positional)]
     mount_point: PathBuf,
 }
 
+impl BbfsCli {
+    fn normalized_mount_point(&self) -> PathBuf {
+        self.mount_point.canonicalize().unwrap()
+    }
+}
+
 fn main() -> anyhow::Result<()> {
     let args: BbfsCli = argh::from_env();
-    let mount_point = args.mount_point.canonicalize().unwrap();
+    let mount_point = args.normalized_mount_point();
+    let data_dir = get_data_dir();
 
+    let cookies = if args.headless {
+        authenticate(HeadlessCookieMonster, &data_dir)
+    } else {
+        authenticate(WebViewCookieMonster, &data_dir)
+    }
+    .map_err(|err| anyhow!("failed to authenticate {err}"))?;
+
+    if !args.monitor {
+        daemonize(&data_dir);
+    }
+
+    let client = BbApiClient::new(cookies, args.all);
+    let fs = Bbfs::new(client).map_err(|_| anyhow!("failed to initialize Blackboard fs driver"))?;
+    fs.mount(&mount_point)?;
+
+    Ok(())
+}
+
+fn get_data_dir() -> PathBuf {
     let strategy = etcetera::choose_base_strategy().unwrap();
-    let data_dir = {
-        let mut data_dir = strategy.data_dir();
-        data_dir.push("blackboardfs");
-        std::fs::create_dir_all(&data_dir).unwrap();
-        data_dir
-    };
-    let wry_data_dir = data_dir.join("wry");
+    let mut data_dir = strategy.data_dir();
+    data_dir.push("blackboardfs");
+    std::fs::create_dir_all(&data_dir).unwrap();
+    data_dir
+}
 
-    let cookie_file = data_dir.join("cookie");
+fn daemonize(data_dir: &PathBuf) {
     let stdout =
         File::create(data_dir.join("stdout.log")).expect("failed to create stdout log file");
     let stderr =
         File::create(data_dir.join("stderr.log")).expect("failed to create stderr log file");
+    Daemon::new().stdout(stdout).stderr(stderr).start().unwrap();
+}
 
-    let bb_url = Url::parse("https://learn.uq.edu.au/").unwrap();
-
-    let cookies = find_cookies(&cookie_file, wry_data_dir, &bb_url).unwrap();
-
-    if !args.monitor {
-        Daemon::new().stdout(stdout).stderr(stderr).start().unwrap();
+fn authenticate<Monster: CookieMonster>(
+    cookie_monster: Monster,
+    data_dir: &PathBuf,
+) -> anyhow::Result<String> {
+    // Check for cached cookie
+    let cookie_cache_file = data_dir.join("cookie");
+    match std::fs::read_to_string(&cookie_cache_file) {
+        Ok(cookie) if is_cookie_valid(&cookie)? => return Ok(cookie),
+        _ => {}
     }
 
-    let client = BbApiClient::new(cookies, args.all);
-    fuser::mount2(
-        Bbfs::new(client).expect("failed to initialize Blackboard client"),
-        mount_point,
-        &[MountOption::AutoUnmount, MountOption::RO],
-    )
-    .unwrap();
-    Ok(())
-}
+    let cookie = cookie_monster.authenticate(data_dir)?;
 
-fn redirecting_agent() -> ureq::Agent {
-    ureq::AgentBuilder::new().redirects(32).build()
-}
+    // Attempt to cache the cookie and warn if that fails
+    File::create(&cookie_cache_file)
+        .and_then(|mut file| file.write_all(cookie.as_bytes()))
+        .map_err(|_| eprintln!("failed to cache cookie"))
+        .ok();
 
-trait RequestExt {
-    fn with_cookies(self, cookies: &[String]) -> Self;
-}
-
-impl RequestExt for ureq::Request {
-    fn with_cookies(self, cookies: &[String]) -> Self {
-        self.set(
-            "cookie",
-            &cookies
-                .iter()
-                .cloned() // TODO(theonlymrcat): I couldn't be bothered
-                .reduce(|mut megacookie, cookie| {
-                    megacookie.push(';');
-                    megacookie.push_str(&cookie);
-                    megacookie
-                })
-                .unwrap_or_default(),
-        )
-    }
-}
-
-fn find_cookies(cookie_file: &Path, wry_data_dir: PathBuf, bb_url: &Url) -> Option<String> {
-    std::fs::read_to_string(cookie_file)
-        .ok()
-        .and_then(|cookie| cookie_valid(&cookie, bb_url).then_some(cookie))
-        .or_else(|| {
-            let cookie = cookie_monster::eat_user_cookies(wry_data_dir, cookie_file)
-                .expect("cookie monster failed");
-
-            cookie_valid(&cookie, bb_url).then(move || {
-                if let Ok(mut file) = File::create(cookie_file) {
-                    if file.write_all(cookie.as_bytes()).is_err() {
-                        eprintln!("Failed to write cookie");
-                    }
-                } else {
-                    eprintln!("Failed to open cookie file");
-                }
-                cookie
-            })
-        })
-}
-
-// TODO(theonlymrcat): This will panic if your internet is down
-fn cookie_valid(cookie: &str, bb_url: &Url) -> bool {
-    redirecting_agent()
-        .request_url("GET", bb_url)
-        .set("cookie", cookie)
-        .call()
-        .map(|response| response.get_url().starts_with("https://learn.uq.edu.au/"))
-        .unwrap()
+    Ok(cookie)
 }
