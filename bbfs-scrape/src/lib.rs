@@ -127,7 +127,7 @@ impl Item {
     fn make_link_file(name: &str, link: &str) -> Item {
         Item::SynthesizedFile(SynthesizedFile {
             name: format!("{name}.{LINK_FILE_EXT}"),
-            contents: create_link_file(&link),
+            contents: create_link_file(link),
         })
     }
 }

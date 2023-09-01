@@ -5,7 +5,7 @@ use fantoccini::{elements::Element, Client, ClientBuilder, Locator};
 use futures::{future::FutureExt, pin_mut, select};
 use rpassword::read_password;
 use std::io::{prelude::*, stdin, stdout};
-use std::path::PathBuf;
+use std::path::Path;
 use std::process::Command;
 use url::Url;
 
@@ -36,7 +36,7 @@ impl HeadlessCookieMonster {
             .await?)
     }
 
-    async fn complete_auth<DuoF: Fn(&str) -> ()>(
+    async fn complete_auth<DuoF: Fn(&str)>(
         client: &Client,
         handle_duo_code: DuoF,
     ) -> anyhow::Result<()> {
@@ -57,12 +57,12 @@ impl HeadlessCookieMonster {
             }
             _ = completion_task => Ok(()),
             _ = failure_task => {
-                return Err(anyhow!("Incorrect username or password"));
+                Err(anyhow!("Incorrect username or password"))
             }
         }
     }
 
-    fn eat_user_cookies<DuoF: Fn(&str) -> ()>(
+    fn eat_user_cookies<DuoF: Fn(&str)>(
         username: &str,
         password: &str,
         handle_duo_code: DuoF,
@@ -172,7 +172,7 @@ impl HeadlessCookieMonster {
 }
 
 impl CookieMonster for HeadlessCookieMonster {
-    fn authenticate(&self, _data_dir: &PathBuf) -> anyhow::Result<String> {
+    fn authenticate(&self, _data_dir: &Path) -> anyhow::Result<String> {
         print!("Username: ");
         let _ = stdout().flush();
         let mut username = "".into();

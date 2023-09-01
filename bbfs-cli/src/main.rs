@@ -1,6 +1,6 @@
-use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
+use std::{fs::File, path::Path};
 
 use anyhow::anyhow;
 use argh::FromArgs;
@@ -65,7 +65,7 @@ fn get_data_dir() -> PathBuf {
     data_dir
 }
 
-fn daemonize(data_dir: &PathBuf) {
+fn daemonize(data_dir: &Path) {
     let stdout =
         File::create(data_dir.join("stdout.log")).expect("failed to create stdout log file");
     let stderr =
@@ -75,7 +75,7 @@ fn daemonize(data_dir: &PathBuf) {
 
 fn authenticate<Monster: CookieMonster>(
     cookie_monster: Monster,
-    data_dir: &PathBuf,
+    data_dir: &Path,
 ) -> anyhow::Result<String> {
     // Check for cached cookie
     let cookie_cache_file = data_dir.join("cookie");

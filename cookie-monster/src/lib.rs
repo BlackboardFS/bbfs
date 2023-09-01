@@ -2,8 +2,7 @@
 #[macro_use]
 extern crate objc;
 
-use std::path::PathBuf;
-use ureq;
+use std::path::Path;
 
 use anyhow::anyhow;
 use wry::webview::Url;
@@ -30,5 +29,5 @@ pub fn is_cookie_valid(cookie: &str) -> anyhow::Result<bool> {
 }
 
 pub trait CookieMonster {
-    fn authenticate(&self, data_dir: &PathBuf) -> anyhow::Result<String>;
+    fn authenticate(&self, data_dir: &Path) -> anyhow::Result<String>;
 }

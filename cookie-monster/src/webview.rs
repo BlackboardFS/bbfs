@@ -1,7 +1,7 @@
 use std::{
     fs::File,
     io::Write,
-    path::{Path, PathBuf},
+    path::Path,
     time::{Duration, Instant},
 };
 
@@ -10,7 +10,7 @@ use anyhow::anyhow;
 use wry::{
     application::{
         dpi::LogicalSize,
-        event::{Event, StartCause, WindowEvent},
+        event::{Event, WindowEvent},
         event_loop::{ControlFlow, EventLoopBuilder, EventLoopProxy},
         platform::run_return::EventLoopExtRunReturn,
         window::WindowBuilder,
@@ -24,6 +24,7 @@ use crate::CookieMonster;
 enum UserEvent {
     PageLoad(String),
     Navigation(String),
+    #[allow(dead_code)]
     GotCookie(String),
 }
 
@@ -137,7 +138,7 @@ impl WebViewCookieMonster {
 }
 
 impl CookieMonster for WebViewCookieMonster {
-    fn authenticate(&self, data_dir: &PathBuf) -> anyhow::Result<String> {
+    fn authenticate(&self, data_dir: &Path) -> anyhow::Result<String> {
         let cookie_file_buf = data_dir.join("tmp_cookie");
         let cookie_file = cookie_file_buf.as_path();
 

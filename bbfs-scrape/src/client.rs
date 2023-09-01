@@ -1,6 +1,6 @@
 use crate::{
     create_link_file, memberships_data::CourseMemberships, Course, CourseItem, CourseItemContent,
-    Item, SynthesizedDirectory, SynthesizedFile, User, LINK_FILE_EXT,
+    Item, SynthesizedDirectory, User, LINK_FILE_EXT,
 };
 use nix::errno::Errno;
 use pct_str::PctStr;
