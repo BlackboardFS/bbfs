@@ -10,10 +10,9 @@ use pct_str::PctStr;
 use time::OffsetDateTime;
 use ureq::{Agent, AgentBuilder};
 
-use crate::LINK_FILE_EXT;
 use crate::{
     create_link_file, memberships_data::CourseMemberships, Course, CourseItem, CourseItemContent,
-    User,
+    Item, SynthesizedDirectory, User, LINK_FILE_EXT,
 };
 
 const BB_BASE_URL: &str = "https://learn.uq.edu.au";
@@ -81,29 +80,29 @@ impl BbApiClient {
         }
     }
 
-    pub fn get_page(&self, page: BbPage) -> Result<String, BbError> {
+    fn get_page(&self, page: BbPage) -> Result<String, BbError> {
         self.agent
             .get(&page.url())
             .set("Cookie", &self.cookies)
             .call()
-            .map_err(|err| BbError::FailedToGetPage(page.clone(), err))?
+            .map_err(|err| BbError::FailedToGetPage(page.clone(), Box::new(err)))?
             .into_string()
             .map_err(|err| BbError::FailedToReadPageContents(page, err))
     }
 
-    pub fn get_me(&self) -> Result<User, BbError> {
+    fn get_me(&self) -> Result<User, BbError> {
         let json = self.get_page(BbPage::Me)?;
         serde_json::from_str(&json).map_err(BbError::FailedToParseMe)
     }
 
-    pub fn get_download_file_name(&self, url: &str) -> Result<String, BbError> {
+    fn get_download_file_name(&self, url: &str) -> Result<String, BbError> {
         let url = &format!("{}{}", BB_BASE_URL, url);
         let response = self
             .agent
             .head(url)
             .set("Cookie", &self.cookies)
             .call()
-            .map_err(BbError::FailedToGetHeaders)?;
+            .map_err(|e| BbError::FailedToGetHeaders(Box::new(e)))?;
 
         let last_component: String = response.get_url().split('/').last().unwrap().into();
         let file_name = last_component.split('?').next().unwrap();
@@ -144,33 +143,13 @@ impl BbApiClient {
         Ok(Self::parse_course_sidebar(&html)
             .unwrap_or_default()
             .into_iter()
-            .map(|entry| entry.into())
             .collect())
     }
 
     /// url should be from a CourseItemContent::Folder
     fn get_directory_contents(&self, url: String) -> Result<Vec<CourseItem>, BbError> {
         let html = self.get_page(BbPage::Folder { url })?;
-        Ok(Self::parse_folder_contents(&html)?
-            .into_iter()
-            .map(|entry| entry.into())
-            .collect())
-    }
-
-    fn get_attachment_directory(&self, item: &CourseItem) -> Result<Vec<CourseItem>, BbError> {
-        item.attachments
-            .iter()
-            .map(|url| {
-                let name = self.get_download_file_name(url)?;
-
-                Ok(CourseItem {
-                    name,
-                    content: Some(CourseItemContent::FileUrl(url.to_string())),
-                    description: None,
-                    attachments: vec![],
-                })
-            })
-            .collect()
+        Ok(Self::parse_folder_contents(&html)?.into_iter().collect())
     }
 
     fn get_course_item_size(&self, item: &CourseItem) -> Result<usize, BbError> {
@@ -183,12 +162,12 @@ impl BbApiClient {
                         .head(url)
                         .set("Cookie", &self.cookies)
                         .call()
-                        .map_err(|err| BbError::FailedToGetHeaders(err))?;
+                        .map_err(|err| BbError::FailedToGetHeaders(Box::new(err)))?;
                     response
                         .header("Content-Length")
                         .ok_or(BbError::MissingContentLengthHeader)?
                         .parse()
-                        .map_err(|err| BbError::InvalidContentLengthHeader(err))?
+                        .map_err(BbError::InvalidContentLengthHeader)?
                 }
                 CourseItemContent::FolderUrl(_) => unreachable!(),
                 CourseItemContent::Link(url) => create_link_file(url).len(),
@@ -236,32 +215,12 @@ impl BbApiClient {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct SynthesizedFile {
-    pub name: String,
-    pub contents: String,
-}
-
-#[derive(Clone, Debug)]
-pub struct SynthesizedDirectory {
-    pub name: String,
-    pub contents: Vec<Item>,
-}
-
-#[derive(Clone, Debug)]
-pub enum Item {
-    Course(Course),
-    CourseItem(CourseItem),
-    SynthesizedFile(SynthesizedFile),
-    SynthesizedDirectory(SynthesizedDirectory),
-}
-
 #[derive(Debug)]
 pub enum BbError {
-    FailedToGetPage(BbPage, ureq::Error),
+    FailedToGetPage(BbPage, Box<ureq::Error>),
     FailedToReadPageContents(BbPage, std::io::Error),
     FailedToGetContents(CourseItem, Option<std::io::Error>),
-    FailedToGetHeaders(ureq::Error),
+    FailedToGetHeaders(Box<ureq::Error>),
     MissingContentLengthHeader,
     InvalidContentLengthHeader(ParseIntError),
     FailedToWebScrapeFolder(anyhow::Error),
@@ -345,20 +304,14 @@ impl BbClient for BbApiClient {
                         .map(Item::CourseItem)
                         .collect();
 
-                    items.push(Item::SynthesizedFile(SynthesizedFile {
-                        name: format!("Blackboard.{}", LINK_FILE_EXT),
-                        contents: create_link_file(&link),
-                    }));
+                    items.push(Item::make_link_file("Blackboard", &link));
 
                     Ok(items)
                 }
                 Item::CourseItem(course_item) => {
                     let mut items: Vec<Item> = match &course_item.content {
                         Some(CourseItemContent::Link(link)) => {
-                            vec![Item::SynthesizedFile(SynthesizedFile {
-                                name: format!("{}.{}", course_item.name, LINK_FILE_EXT),
-                                contents: create_link_file(link),
-                            })]
+                            vec![Item::make_link_file(&course_item.name, link)]
                         }
                         Some(CourseItemContent::FileUrl(url)) => {
                             vec![Item::CourseItem(CourseItem {
@@ -373,71 +326,18 @@ impl BbClient for BbApiClient {
                             .into_iter()
                             .map(Item::CourseItem)
                             .collect(),
-                        // TODO: attachments
                         None => vec![],
                     };
 
-                    if !course_item.attachments.is_empty() {
-                        items.append(
-                            &mut course_item
-                                .attachments
-                                .iter()
-                                .map(|attachment| {
-                                    Item::CourseItem(CourseItem {
-                                        name: "".into(),
-                                        content: Some(CourseItemContent::FileUrl(
-                                            attachment.clone(),
-                                        )),
-                                        description: None,
-                                        attachments: vec![],
-                                    })
-                                })
-                                .collect(),
-                        );
-                    }
+                    items.append(&mut course_item.attachments_as_items());
 
-                    if let Some(description) = &course_item.description {
-                        items.push(Item::SynthesizedFile(SynthesizedFile {
-                            name: format!("{}.txt", course_item.name),
-                            contents: description.clone(),
-                        }));
-                    }
+                    items.extend(course_item.maybe_new_description_file());
 
-                    if let Some(CourseItemContent::Link(link)) = &course_item.content {
-                        if !course_item.attachments.is_empty() {
-                            items.push(Item::SynthesizedFile(SynthesizedFile {
-                                name: format!("{}.{}", course_item.name, LINK_FILE_EXT),
-                                contents: create_link_file(link),
-                            }));
-                        }
-                    }
+                    items.extend(course_item.maybe_new_link_file());
 
-                    let link = match &course_item.content {
-                        Some(CourseItemContent::FolderUrl(url)) => url.clone(),
-                        Some(CourseItemContent::Link(_) | CourseItemContent::FileUrl(_)) | None => {
-                            // Get a link to the parent
-                            match path[path.len() - 2] {
-                                Item::Course(course) => format!(
-                                    "https://learn.uq.edu.au/ultra/courses/{}/cl/outline",
-                                    course.id
-                                ),
-                                Item::CourseItem(item) => match &item.content {
-                                    Some(CourseItemContent::FolderUrl(url)) => url.clone(),
-                                    Some(CourseItemContent::FileUrl(_))
-                                    | Some(CourseItemContent::Link(_))
-                                    | None => unreachable!(),
-                                },
-                                Item::SynthesizedDirectory(_) | Item::SynthesizedFile(_) => {
-                                    unreachable!()
-                                }
-                            }
-                        }
-                    };
+                    let link = course_item.get_blackboard_link(path[path.len() - 2]);
 
-                    items.push(Item::SynthesizedFile(SynthesizedFile {
-                        name: format!("Blackboard.{}", LINK_FILE_EXT),
-                        contents: create_link_file(&link),
-                    }));
+                    items.push(Item::make_link_file("Blackboard", &link));
 
                     Ok(items)
                 }

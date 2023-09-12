@@ -13,22 +13,7 @@ use winapi::shared::ntstatus::{
 };
 use winapi::um::winnt::{FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_READONLY};
 
-use bbfs_scrape::client::{BbClient, ItemType};
-
-pub fn mount(client: impl BbClient, mount_point: impl AsRef<Path>) {
-    dokan::init();
-    let fs = Bbfs {
-        client,
-        mount_point: OnceLock::new(),
-        paths: Default::default(),
-        next_index: AtomicU64::new(0),
-    };
-    let mount_point_ucstr = UCString::<u16>::from_os_str(mount_point.as_ref()).unwrap();
-    // TODO: Consider timeouts when moving auth to API client
-    let mount_options = MountOptions::default();
-    let mut mounter = FileSystemMounter::new(&fs, &mount_point_ucstr, &mount_options);
-    mounter.mount().unwrap();
-}
+use bbfs_scrape::client::{BbClient, BbError, ItemType};
 
 #[derive(Clone)]
 pub struct ItemNode<Item> {
@@ -45,6 +30,27 @@ pub struct Bbfs<Client: BbClient> {
     mount_point: OnceLock<PathBuf>,
     paths: Mutex<HashMap<Utf8PathBuf, ItemNode<Client::Item>>>,
     next_index: AtomicU64,
+}
+
+impl<Client: BbClient> Bbfs<Client> {
+    pub fn new(client: Client) -> Result<Self, BbError> {
+        Ok(Bbfs {
+            client,
+            mount_point: OnceLock::new(),
+            paths: Default::default(),
+            next_index: AtomicU64::new(0),
+        })
+    }
+
+    pub fn mount(&self, mount_point: impl AsRef<Path>) -> anyhow::Result<()> {
+        dokan::init();
+        let mount_point_ucstr = UCString::<u16>::from_os_str(mount_point.as_ref()).unwrap();
+        // TODO: Consider timeouts when moving auth to API client
+        let mount_options = MountOptions::default();
+        let mut mounter = FileSystemMounter::new(self, &mount_point_ucstr, &mount_options);
+        mounter.mount().unwrap();
+        Ok(())
+    }
 }
 
 impl<Client: BbClient> Bbfs<Client> {
@@ -102,6 +108,7 @@ impl<'c, 'h: 'c, Client: BbClient + 'h> FileSystemHandler<'c, 'h> for Bbfs<Clien
         _info: &dokan::OperationInfo<'c, 'h, Self>,
     ) -> dokan::OperationResult<()> {
         // Create the root ItemNode
+        // TODO: Move this to fs creation, for consistency?
         let mut lock = self.paths.lock().unwrap();
 
         let item = self.client.get_root().unwrap();

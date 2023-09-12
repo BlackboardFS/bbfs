@@ -7,19 +7,10 @@ use nix::errno::Errno;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::ffi::OsStr;
-use std::path::Path;
+use std::path::PathBuf;
 use std::time::{Duration, UNIX_EPOCH};
 
-use bbfs_scrape::client::{BbClient, ItemType};
-
-pub fn mount(client: impl BbClient, mount_point: impl AsRef<Path>) {
-    fuser::mount2(
-        Bbfs::new(client).expect("failed to initialize Blackboard client"),
-        mount_point,
-        &[MountOption::RO],
-    )
-    .unwrap();
-}
+use bbfs_scrape::client::{BbClient, BbError, ItemType};
 
 // TODO: Figure out the best TTL (if any)
 const TTL: Duration = Duration::from_secs(1);
@@ -74,7 +65,7 @@ pub struct Bbfs<Client: BbClient> {
 }
 
 impl<Client: BbClient> Bbfs<Client> {
-    pub fn new(client: Client) -> Result<Bbfs<Client>, Client::Error> {
+    pub fn new(client: Client) -> Result<Bbfs<Client>, BbError> {
         let mut inodes = HashMap::new();
         inodes.insert(
             1,
@@ -94,16 +85,18 @@ impl<Client: BbClient> Bbfs<Client> {
         })
     }
 
+    pub fn mount(self, mount_point: &PathBuf) -> anyhow::Result<()> {
+        fuser::mount2(self, mount_point, &[MountOption::RO]).map_err(|err| err.into())
+    }
+
     fn get_free_inode(&self) -> u64 {
         let mut inode = self.next_free_inode.borrow_mut();
         let free_inode = *inode;
         *inode += 1;
         free_inode
     }
-}
 
-impl<Client: BbClient> Bbfs<Client> {
-    fn attr(&self, inode: &ItemInode<Client::Item>) -> Result<FileAttr, Client::Error> {
+    fn attr(&self, inode: &ItemInode<Client::Item>) -> Result<FileAttr, BbError> {
         Ok(match self.client.get_type(&inode.item) {
             ItemType::File => fileattr(inode.ino, self.client.get_size(&inode.item)? as u64),
             ItemType::Directory => dirattr(inode.ino),
@@ -147,7 +140,7 @@ impl<Client: BbClient> Filesystem for Bbfs<Client> {
             Some(inode) => {
                 let attr = match self.attr(inode) {
                     Ok(attr) => attr,
-                    Err(err) => return reply.error(err.into() as _),
+                    Err(err) => return reply.error(Errno::from(err) as _),
                 };
                 reply.entry(&TTL, &attr, 0)
             }
@@ -165,7 +158,7 @@ impl<Client: BbClient> Filesystem for Bbfs<Client> {
 
         match self.attr(inode) {
             Ok(attr) => reply.attr(&TTL, &attr),
-            Err(err) => reply.error(err.into() as _),
+            Err(err) => reply.error(Errno::from(err) as _),
         }
     }
 
@@ -239,7 +232,7 @@ impl<Client: BbClient> Filesystem for Bbfs<Client> {
             }
 
             entries.push((inode.parent.unwrap_or(1), FileType::Directory, ".."));
-            self.cached_children(&inode)
+            self.cached_children(inode)
         } else {
             eprintln!("attempted to read directory contents of non-existent inode (ino={ino})");
             return reply.error(ENOENT);
@@ -269,7 +262,7 @@ impl<Client: BbClient> Filesystem for Bbfs<Client> {
                     },
                     name: match self.client.get_name(&item) {
                         Ok(name) => name,
-                        Err(err) => return reply.error(err.into() as _),
+                        Err(err) => return reply.error(Errno::from(err) as _),
                     },
                     item,
                     children: None,

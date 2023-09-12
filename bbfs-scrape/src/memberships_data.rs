@@ -39,7 +39,6 @@ impl From<CourseMembership> for Course {
     fn from(value: CourseMembership) -> Self {
         Course {
             short_name: value.course.short_name[..8].into(),
-            full_name: value.course.display_name,
             id: value.course_id,
         }
     }

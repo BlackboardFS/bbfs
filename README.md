@@ -88,6 +88,13 @@ sudo dnf install gtk3-devel webkit2gtk4.1-devel fuse3-devel
 sudo pacman -S webkit2gtk-4.1 fuse3
 ```
 
+## Installation
+Clone this repo to a location of your choosing. Then
+```
+git submodule update && git submodule init
+```
+You can then `cargo run -p bbfs-cli` or `cargo install --bin bbfs-cli` as you wish.
+
 ## Usage
 
 This is a FUSE-based filesystem. To mount:
@@ -105,4 +112,8 @@ To unmount the filesystem:
 
 ```
 fusermount -u <mount_point>
+```
+or on MacOS:
+```
+diskutil unmount <mount_point>
 ```

@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+anyhow = "1.0.75"
 bbfs-scrape = { path = "../bbfs-scrape" }
 camino = "1.1.6"
 dokan = "0.3.1"

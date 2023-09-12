@@ -6,7 +6,16 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.75"
 cookie = "^0.16.1"
+etcetera = "0.8.0"
 wry = "0.31.1"
+ureq = "2.7.1"
+url = "2.4.1"
+rpassword = "7.2.0"
+webdriver-install = "0.3.2"
+tokio = "1.32.0"
+fantoccini = "0.19.3"
+futures = "0.3.28"
+serde_json = "1.0.105"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 gio = "^0.16.0"
