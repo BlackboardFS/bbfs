@@ -1,31 +1,32 @@
+use std::collections::HashMap;
+use std::error::Error;
+use std::fmt::Debug;
+use std::fmt::Display;
+use std::num::ParseIntError;
+use std::sync::Mutex;
+use std::time::Duration;
+
+use pct_str::PctStr;
+use time::OffsetDateTime;
+use ureq::{Agent, AgentBuilder};
+
 use crate::LINK_FILE_EXT;
 use crate::{
     create_link_file, memberships_data::CourseMemberships, Course, CourseItem, CourseItemContent,
     User,
 };
-use nix::errno::Errno;
-use pct_str::PctStr;
-use std::cell::RefCell;
-use std::error::Error;
-use std::fmt::Debug;
-use std::fmt::Display;
-use std::num::ParseIntError;
-use std::{collections::HashMap, time::Duration};
-use time::OffsetDateTime;
-use ureq::{Agent, AgentBuilder};
 
 const BB_BASE_URL: &str = "https://learn.uq.edu.au";
 
-pub trait BbClient {
-    type Item: Clone;
-    type Error: Into<Errno> + Debug;
+pub trait BbClient: Sync {
+    type Item: Clone + Send + Sync;
 
-    fn get_root(&self) -> Result<Self::Item, Self::Error>;
-    fn get_children(&self, path: Vec<&Self::Item>) -> Result<Vec<Self::Item>, Self::Error>;
-    fn get_size(&self, item: &Self::Item) -> Result<usize, Self::Error>;
-    fn get_contents(&self, item: &Self::Item) -> Result<Vec<u8>, Self::Error>;
+    fn get_root(&self) -> Result<Self::Item, BbError>;
+    fn get_children(&self, path: Vec<&Self::Item>) -> Result<Vec<Self::Item>, BbError>;
+    fn get_size(&self, item: &Self::Item) -> Result<usize, BbError>;
+    fn get_contents(&self, item: &Self::Item) -> Result<Vec<u8>, BbError>;
     fn get_type(&self, item: &Self::Item) -> ItemType;
-    fn get_name(&self, item: &Self::Item) -> Result<String, Self::Error>;
+    fn get_name(&self, item: &Self::Item) -> Result<String, BbError>;
 }
 
 #[derive(PartialEq)]
@@ -62,7 +63,8 @@ pub struct BbApiClient {
     cookies: String,
     agent: Agent,
     all_courses: bool,
-    cache: RefCell<HashMap<CourseItem, Vec<u8>>>,
+    // TODO: Consider a dashmap or similar
+    cache: Mutex<HashMap<CourseItem, Vec<u8>>>,
 }
 
 impl BbApiClient {
@@ -75,7 +77,7 @@ impl BbApiClient {
             cookies,
             agent,
             all_courses,
-            cache: RefCell::new(HashMap::new()),
+            cache: Mutex::new(HashMap::new()),
         }
     }
 
@@ -199,7 +201,7 @@ impl BbApiClient {
     }
 
     fn get_course_item_contents(&self, item: &CourseItem) -> Result<Vec<u8>, BbError> {
-        let mut cache = self.cache.borrow_mut();
+        let mut cache = self.cache.lock().unwrap();
         if cache.contains_key(item) {
             return Ok(cache[item].clone());
         }
@@ -217,12 +219,7 @@ impl BbApiClient {
                     response
                         .into_reader()
                         .read_to_end(&mut bytes)
-                        .map_err(|e| {
-                            BbError::FailedToGetContents(
-                                item.clone(),
-                                e.raw_os_error().map(Errno::from_i32),
-                            )
-                        })?;
+                        .map_err(|e| BbError::FailedToGetContents(item.clone(), Some(e)))?;
                     bytes
                 }
                 //CourseItemContent::FolderUrl(_) => unreachable!(),
@@ -263,7 +260,7 @@ pub enum Item {
 pub enum BbError {
     FailedToGetPage(BbPage, ureq::Error),
     FailedToReadPageContents(BbPage, std::io::Error),
-    FailedToGetContents(CourseItem, Option<Errno>),
+    FailedToGetContents(CourseItem, Option<std::io::Error>),
     FailedToGetHeaders(ureq::Error),
     MissingContentLengthHeader,
     InvalidContentLengthHeader(ParseIntError),
@@ -273,21 +270,42 @@ pub enum BbError {
     NotAFile(Item),
 }
 
-impl Into<Errno> for BbError {
-    fn into(self) -> Errno {
-        eprintln!("{:?}", self);
+#[cfg(unix)]
+impl From<BbError> for nix::errno::Errno {
+    fn from(error: BbError) -> nix::errno::Errno {
+        eprintln!("{:?}", error);
         // TODO: Choose errnos more carefully
-        match self {
-            Self::FailedToGetPage(_, _)
-            | Self::FailedToGetContents(_, _)
-            | Self::FailedToGetHeaders(_) => Errno::ENETRESET,
-            Self::FailedToReadPageContents(_, _)
-            | Self::MissingContentLengthHeader
-            | Self::InvalidContentLengthHeader(_)
-            | Self::FailedToWebScrapeFolder(_)
-            | Self::FailedToParseMemberships(_)
-            | Self::FailedToParseMe(_)
-            | Self::NotAFile(_) => Errno::EIO,
+        match error {
+            BbError::FailedToGetPage(_, _)
+            | BbError::FailedToGetContents(_, _)
+            | BbError::FailedToGetHeaders(_) => nix::errno::Errno::ENETRESET,
+            BbError::FailedToReadPageContents(_, _)
+            | BbError::MissingContentLengthHeader
+            | BbError::InvalidContentLengthHeader(_)
+            | BbError::FailedToWebScrapeFolder(_)
+            | BbError::FailedToParseMemberships(_)
+            | BbError::FailedToParseMe(_) => nix::errno::Errno::EIO,
+            BbError::NotAFile(_) => nix::errno::Errno::EISDIR,
+        }
+    }
+}
+
+#[cfg(windows)]
+impl From<BbError> for winapi::shared::ntdef::NTSTATUS {
+    fn from(error: BbError) -> winapi::shared::ntdef::NTSTATUS {
+        use winapi::shared::ntstatus;
+        eprintln!("{:?}", error);
+        match error {
+            BbError::FailedToGetPage(_, _)
+            | BbError::FailedToGetContents(_, _)
+            | BbError::FailedToGetHeaders(_) => ntstatus::STATUS_UNEXPECTED_NETWORK_ERROR,
+            BbError::FailedToReadPageContents(_, _)
+            | BbError::MissingContentLengthHeader
+            | BbError::InvalidContentLengthHeader(_)
+            | BbError::FailedToWebScrapeFolder(_)
+            | BbError::FailedToParseMemberships(_)
+            | BbError::FailedToParseMe(_) => ntstatus::STATUS_FILE_NOT_AVAILABLE,
+            BbError::NotAFile(_) => ntstatus::STATUS_FILE_IS_A_DIRECTORY,
         }
     }
 }
@@ -303,9 +321,8 @@ impl Error for BbError {}
 
 impl BbClient for BbApiClient {
     type Item = Item;
-    type Error = BbError;
 
-    fn get_root(&self) -> Result<Self::Item, Self::Error> {
+    fn get_root(&self) -> Result<Self::Item, BbError> {
         Ok(Item::SynthesizedDirectory(SynthesizedDirectory {
             name: "root".into(),
             contents: self.get_courses()?.into_iter().map(Item::Course).collect(),

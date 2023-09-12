@@ -3,12 +3,13 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use argh::FromArgs;
-use daemonize_me::Daemon;
 use etcetera::BaseStrategy;
-use fuser::MountOption;
 use url::Url;
 
-use bbfs_fuse::Bbfs;
+#[cfg(windows)]
+use bbfs_dokan as bbfs_filesystem;
+#[cfg(unix)]
+use bbfs_fuse as bbfs_filesystem;
 use bbfs_scrape::client::BbApiClient;
 
 #[derive(FromArgs)]
@@ -48,17 +49,17 @@ fn main() -> anyhow::Result<()> {
 
     let cookies = find_cookies(&cookie_file, wry_data_dir, &bb_url).unwrap();
 
+    #[cfg(unix)]
     if !args.monitor {
-        Daemon::new().stdout(stdout).stderr(stderr).start().unwrap();
+        daemonize_me::Daemon::new()
+            .stdout(stdout)
+            .stderr(stderr)
+            .start()
+            .unwrap();
     }
 
     let client = BbApiClient::new(cookies, args.all);
-    fuser::mount2(
-        Bbfs::new(client).expect("failed to initialize Blackboard client"),
-        mount_point,
-        &[MountOption::AutoUnmount, MountOption::RO],
-    )
-    .unwrap();
+    bbfs_filesystem::mount(client, mount_point);
     Ok(())
 }
 

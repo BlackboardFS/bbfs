@@ -87,3 +87,16 @@ pub fn create_link_file(hyperlink: &str) -> String {
 
 #[cfg(target_os = "macos")]
 pub const LINK_FILE_EXT: &str = "webloc";
+
+#[cfg(target_os = "windows")]
+pub fn create_link_file(hyperlink: &str) -> String {
+    format!(
+        "\
+[InternetShortcut]
+URL=https://learn.uq.edu.au{hyperlink}
+"
+    )
+}
+
+#[cfg(target_os = "windows")]
+pub const LINK_FILE_EXT: &str = "url";

@@ -1,14 +1,25 @@
 use fuser::{
-    FileAttr, FileType, Filesystem, ReplyAttr, ReplyData, ReplyDirectory, ReplyEntry, Request,
+    FileAttr, FileType, Filesystem, MountOption, ReplyAttr, ReplyData, ReplyDirectory, ReplyEntry,
+    Request,
 };
 use libc::{EIO, ENOENT};
 use nix::errno::Errno;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::ffi::OsStr;
+use std::path::Path;
 use std::time::{Duration, UNIX_EPOCH};
 
 use bbfs_scrape::client::{BbClient, ItemType};
+
+pub fn mount(client: impl BbClient, mount_point: impl AsRef<Path>) {
+    fuser::mount2(
+        Bbfs::new(client).expect("failed to initialize Blackboard client"),
+        mount_point,
+        &[MountOption::RO],
+    )
+    .unwrap();
+}
 
 // TODO: Figure out the best TTL (if any)
 const TTL: Duration = Duration::from_secs(1);

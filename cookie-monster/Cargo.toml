@@ -17,3 +17,8 @@ webkit2gtk = { version = "1.1.0", features = ["v2_20"] }
 block = "0.1.6"
 objc = "0.2.7"
 objc-foundation = "0.1.1"
+
+[target.'cfg(windows)'.dependencies]
+webview2-com = "0.25.0"
+widestring = "1.0.2"
+windows = "0.48.0"

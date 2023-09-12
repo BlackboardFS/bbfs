@@ -12,12 +12,16 @@ anyhow = "1.0.75"
 argh = "0.1.12"
 cookie-monster = { path = "../cookie-monster" }
 cookie_store = "^0.19"
-daemonize-me = "2.0.1"
 etcetera = "0.8.0"
-bbfs-fuse = { path = "../bbfs-fuse" }
-fuser = "0.13.0"
 bbfs-scrape = { path = "../bbfs-scrape" }
 serde = { version = "1.0.187", features = ["derive"] }
 serde_json = "1.0.105"
 ureq = "2.7.1"
 url = "2.4.0"
+
+[target.'cfg(unix)'.dependencies]
+bbfs-fuse = { path = "../bbfs-fuse" }
+daemonize-me = "2.0.1"
+
+[target.'cfg(windows)'.dependencies]
+bbfs-dokan = { path = "../bbfs-dokan" }

@@ -228,3 +228,50 @@ fn extract_cookies_from_webview(
         let _: () = msg_send![http_cookie_store, getAllCookies:block];
     }
 }
+
+#[cfg(target_os = "windows")]
+fn extract_cookies_from_webview(
+    webview: &WebView,
+    cookie_proxy: EventLoopProxy<UserEvent>,
+    cookie_file: &Path,
+) {
+    use std::ptr::addr_of_mut;
+    use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2_2;
+    use webview2_com::GetCookiesCompletedHandler;
+    use widestring::u16cstr;
+    use windows::core::ComInterface;
+    use windows::core::{PWSTR, PCWSTR};
+    use wry::webview::WebviewExtWindows;
+
+    let webview_controller = webview.controller();
+    let webview = ComInterface::cast::<ICoreWebView2_2>(&unsafe { webview_controller.CoreWebView2() }
+        .unwrap())
+        .unwrap();
+    let cookie_manager = unsafe { webview.CookieManager() }.unwrap();
+    unsafe {
+        cookie_manager
+            .GetCookies(
+                PCWSTR(u16cstr!("https://learn.uq.edu.au").as_ptr()),
+                &GetCookiesCompletedHandler::create(Box::new(move |h_result, cookie_list| {
+                    h_result.unwrap();
+                    let mut count = 0u32;
+                    let cookie_list = cookie_list.unwrap();
+                    cookie_list.Count(addr_of_mut!(count)).unwrap();
+                    let megacookie = (0..count)
+                        .map(|index| {
+                            let cookie = cookie_list.GetValueAtIndex(index).unwrap();
+                            let mut name = PWSTR(std::ptr::null_mut());
+                            let mut value = PWSTR(std::ptr::null_mut());
+                            cookie.Name(addr_of_mut!(name)).unwrap();
+                            cookie.Value(addr_of_mut!(value)).unwrap();
+                            format!("{}={}", name.to_string().unwrap(), value.to_string().unwrap())
+                        })
+                        .collect::<Vec<String>>()
+                        .join(",");
+                    cookie_proxy.send_event(UserEvent::GotCookie(megacookie)).unwrap();
+                    Ok(())
+                })),
+            )
+            .unwrap();
+    }
+}

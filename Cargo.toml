@@ -4,6 +4,7 @@ resolver = "2"
 members = [
     "bbfs-scrape",
     "bbfs-fuse",
+    "bbfs-dokan",
     "bbfs-cli",
     "cookie-monster",
 ]
