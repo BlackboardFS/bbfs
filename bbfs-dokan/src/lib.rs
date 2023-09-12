@@ -75,6 +75,22 @@ impl<Client: BbClient> Bbfs<Client> {
     fn next_index(&self) -> u64 {
         self.next_index.fetch_add(1, atomic::Ordering::SeqCst)
     }
+
+    fn sanitize_name(&self, item: String) -> String {
+        String::from_utf8(
+            item.into_bytes()
+                .into_iter()
+                .map(|b| {
+                    if matches!(b, b'<' | b'>' | b':' | b'\\' | b'|' | b'?' | b'*') {
+                        b'-'
+                    } else {
+                        b
+                    }
+                })
+                .collect::<Vec<_>>(),
+        )
+        .expect("transformed string should remain valid utf-8")
+    }
 }
 
 impl<'c, 'h: 'c, Client: BbClient + 'h> FileSystemHandler<'c, 'h> for Bbfs<Client> {
@@ -83,7 +99,7 @@ impl<'c, 'h: 'c, Client: BbClient + 'h> FileSystemHandler<'c, 'h> for Bbfs<Clien
     fn mounted(
         &'h self,
         mount_point: &widestring::U16CStr,
-        info: &dokan::OperationInfo<'c, 'h, Self>,
+        _info: &dokan::OperationInfo<'c, 'h, Self>,
     ) -> dokan::OperationResult<()> {
         // Create the root ItemNode
         let mut lock = self.paths.lock().unwrap();
@@ -109,13 +125,13 @@ impl<'c, 'h: 'c, Client: BbClient + 'h> FileSystemHandler<'c, 'h> for Bbfs<Clien
     fn create_file(
         &'h self,
         file_name: &widestring::U16CStr,
-        security_context: &dokan::IO_SECURITY_CONTEXT,
-        desired_access: winapi::um::winnt::ACCESS_MASK,
-        file_attributes: u32,
-        share_access: u32,
-        create_disposition: u32,
-        create_options: u32,
-        info: &mut dokan::OperationInfo<'c, 'h, Self>,
+        _security_context: &dokan::IO_SECURITY_CONTEXT,
+        _desired_access: winapi::um::winnt::ACCESS_MASK,
+        _file_attributes: u32,
+        _share_access: u32,
+        _create_disposition: u32,
+        _create_options: u32,
+        _info: &mut dokan::OperationInfo<'c, 'h, Self>,
     ) -> dokan::OperationResult<dokan::CreateFileInfo<Self::Context>> {
         let lock = self.paths.lock().unwrap();
         let path = Utf8PathBuf::from(self.normalize_path(file_name));
@@ -132,13 +148,12 @@ impl<'c, 'h: 'c, Client: BbClient + 'h> FileSystemHandler<'c, 'h> for Bbfs<Clien
 
     fn read_file(
         &'h self,
-        file_name: &widestring::U16CStr,
+        _file_name: &widestring::U16CStr,
         offset: i64,
         buffer: &mut [u8],
-        info: &dokan::OperationInfo<'c, 'h, Self>,
+        _info: &dokan::OperationInfo<'c, 'h, Self>,
         node: &'c Self::Context,
     ) -> dokan::OperationResult<u32> {
-        let lock = self.paths.lock().unwrap();
         println!(
             "read_file {} offset: {offset} size: {}",
             node.path,
@@ -175,8 +190,8 @@ impl<'c, 'h: 'c, Client: BbClient + 'h> FileSystemHandler<'c, 'h> for Bbfs<Clien
 
     fn get_file_information(
         &'h self,
-        file_name: &widestring::U16CStr,
-        info: &dokan::OperationInfo<'c, 'h, Self>,
+        _file_name: &widestring::U16CStr,
+        _info: &dokan::OperationInfo<'c, 'h, Self>,
         node: &'c Self::Context,
     ) -> dokan::OperationResult<dokan::FileInfo> {
         Ok(dokan::FileInfo {
@@ -202,9 +217,9 @@ impl<'c, 'h: 'c, Client: BbClient + 'h> FileSystemHandler<'c, 'h> for Bbfs<Clien
 
     fn find_files(
         &'h self,
-        file_name: &widestring::U16CStr,
+        _file_name: &widestring::U16CStr,
         mut fill_find_data: impl FnMut(&dokan::FindData) -> dokan::FillDataResult,
-        info: &dokan::OperationInfo<'c, 'h, Self>,
+        _info: &dokan::OperationInfo<'c, 'h, Self>,
         node: &'c Self::Context,
     ) -> dokan::OperationResult<()> {
         let mut lock = self.paths.lock().unwrap();
@@ -217,8 +232,9 @@ impl<'c, 'h: 'c, Client: BbClient + 'h> FileSystemHandler<'c, 'h> for Bbfs<Clien
 
             let mut paths = vec![];
             for item in items {
+                let item_name = self.sanitize_name(self.client.get_name(&item)?);
                 let child_node = ItemNode {
-                    path: node.path.join(self.client.get_name(&item)?),
+                    path: node.path.join(item_name),
                     index: self.next_index(),
                     is_dir: matches!(self.client.get_type(&item), ItemType::Directory),
                     item,
