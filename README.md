@@ -51,14 +51,21 @@ Blackboard/COMP3506
 15 directories, 70 files
 ```
 
-Links to external resources are exposed as `.desktop` files (Linux) or `.webloc` files (macOS) so
-you can easily reach Gradescope, echo360, and even get back to Blackboard's own web UI right from
-your file browser!
+Links to external resources are exposed as `.url` (Windows), `.webloc` (macOS) or `.desktop` (Linux)
+files, so you can easily reach Gradescope, echo360, and even get back to Blackboard's own web UI
+right from your file browser!
 
 As a bonus, browsing the filesystem is significantly faster than browsing the Blackboard web UI,
 which is very helpful when you're stuck on slow campus WiFi.
 
 ## Requirements
+
+To build from source, the latest stable [Rust](https://rustup.rs/) toolchain must be installed.
+Other platform-specific runtime dependencies are described below:
+
+### Windows
+
+BlackboardFS requires [Dokan](https://dokan-dev.github.io/) be installed on your system.
 
 ### macOS
 
