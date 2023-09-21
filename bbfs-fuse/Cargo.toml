@@ -7,10 +7,8 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.75"
+bbfs-api = { path = "../bbfs-api" }
 dotenv = "0.15.0"
 fuser = "0.13.0"
 libc = "0.2.147"
-nix = { version = "0.26.2", default-features = false, features = ["user"] }
-
-[dependencies.bbfs-scrape]
-path = "../bbfs-scrape"
+nix = { version = "0.27.1", default-features = false, features = ["user"] }

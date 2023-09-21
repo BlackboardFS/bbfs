@@ -2,10 +2,11 @@
 resolver = "2"
 
 members = [
-    "bbfs-scrape",
-    "bbfs-fuse",
+    "bbfs-api",
     "bbfs-dokan",
     "bbfs-cli",
+    "bbfs-fuse",
+    "bbfs-scrape",
     "cookie-monster",
 ]
 

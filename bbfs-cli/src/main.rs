@@ -6,13 +6,12 @@ use anyhow::anyhow;
 use argh::FromArgs;
 use cookie_monster::{is_cookie_valid, CookieMonster, HeadlessCookieMonster, WebViewCookieMonster};
 use etcetera::BaseStrategy;
-use url::Url;
 
 #[cfg(windows)]
 use bbfs_dokan::Bbfs;
 #[cfg(unix)]
 use bbfs_fuse::Bbfs;
-use bbfs_scrape::client::BbApiClient;
+use bbfs_scrape::BbScrapeClient;
 
 #[derive(FromArgs)]
 /// A CLI tool to authenticate to and mount BlackboardFS
@@ -53,7 +52,7 @@ fn main() -> anyhow::Result<()> {
         daemonize(&data_dir);
     }
 
-    let client = BbApiClient::new(cookies, args.all);
+    let client = BbScrapeClient::new(cookies, args.all);
     let fs = Bbfs::new(client).map_err(|_| anyhow!("failed to initialize Blackboard fs driver"))?;
     fs.mount(&mount_point)?;
 

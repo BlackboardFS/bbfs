@@ -1,16 +1,17 @@
-use fuser::{
-    FileAttr, FileType, Filesystem, MountOption, ReplyAttr, ReplyData, ReplyDirectory, ReplyEntry,
-    Request,
-};
-use libc::{EIO, ENOENT};
-use nix::errno::Errno;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::path::PathBuf;
 use std::time::{Duration, UNIX_EPOCH};
 
-use bbfs_scrape::client::{BbClient, BbError, ItemType};
+use fuser::{
+    FileAttr, FileType, Filesystem, MountOption, ReplyAttr, ReplyData, ReplyDirectory, ReplyEntry,
+    Request,
+};
+use libc::{EIO, ENOENT};
+use nix::errno::Errno;
+
+use bbfs_api::{BbClient, ItemType};
 
 // TODO: Figure out the best TTL (if any)
 const TTL: Duration = Duration::from_secs(1);
@@ -65,7 +66,7 @@ pub struct Bbfs<Client: BbClient> {
 }
 
 impl<Client: BbClient> Bbfs<Client> {
-    pub fn new(client: Client) -> Result<Bbfs<Client>, BbError> {
+    pub fn new(client: Client) -> Result<Bbfs<Client>, Errno> {
         let mut inodes = HashMap::new();
         inodes.insert(
             1,
@@ -74,7 +75,9 @@ impl<Client: BbClient> Bbfs<Client> {
                 ino: 1,
                 ty: FileType::Directory,
                 name: "root".into(),
-                item: client.get_root()?,
+                item: client
+                    .get_root()
+                    .map_err(<Client::Error as Into<Errno>>::into)?,
                 children: None,
             },
         );
@@ -96,9 +99,14 @@ impl<Client: BbClient> Bbfs<Client> {
         free_inode
     }
 
-    fn attr(&self, inode: &ItemInode<Client::Item>) -> Result<FileAttr, BbError> {
+    fn attr(&self, inode: &ItemInode<Client::Item>) -> Result<FileAttr, Errno> {
         Ok(match self.client.get_type(&inode.item) {
-            ItemType::File => fileattr(inode.ino, self.client.get_size(&inode.item)? as u64),
+            ItemType::File => fileattr(
+                inode.ino,
+                self.client
+                    .get_size(&inode.item)
+                    .map_err(<Client::Error as Into<Errno>>::into)? as u64,
+            ),
             ItemType::Directory => dirattr(inode.ino),
         })
     }
@@ -262,7 +270,7 @@ impl<Client: BbClient> Filesystem for Bbfs<Client> {
                     },
                     name: match self.client.get_name(&item) {
                         Ok(name) => name,
-                        Err(err) => return reply.error(Errno::from(err) as _),
+                        Err(err) => return reply.error(err.into() as _),
                     },
                     item,
                     children: None,
