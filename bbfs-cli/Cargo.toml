@@ -8,20 +8,19 @@ name = "bbfs"
 path = "src/main.rs"
 
 [dependencies]
-anyhow = "1.0.75"
+anyhow.workspace = true
 argh = "0.1.12"
-cookie-monster = { path = "../cookie-monster" }
-cookie_store = "^0.19"
+cookie-monster.workspace = true
+cookie_store.workspace = true
 etcetera = "0.8.0"
-bbfs-scrape = { path = "../bbfs-scrape" }
-serde = { version = "1.0.187", features = ["derive"] }
-serde_json = "1.0.105"
-ureq = "2.7.1"
-url = "2.4.0"
+bbfs-scrape.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+ureq.workspace = true
 
 [target.'cfg(unix)'.dependencies]
-bbfs-fuse = { path = "../bbfs-fuse" }
+bbfs-fuse.workspace = true
 daemonize-me = "2.0.1"
 
 [target.'cfg(windows)'.dependencies]
-bbfs-dokan = { path = "../bbfs-dokan" }
+bbfs-dokan.workspace = true

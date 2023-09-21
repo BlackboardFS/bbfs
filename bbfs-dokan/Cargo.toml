@@ -4,9 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-anyhow = "1.0.75"
-bbfs-scrape = { path = "../bbfs-scrape" }
+anyhow.workspace = true
+bbfs-scrape.workspace = true
 camino = "1.1.6"
 dokan = "0.3.1"
 widestring = "0.4.3"
-winapi = "0.3.9"
+winapi.workspace = true
