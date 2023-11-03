@@ -206,7 +206,7 @@ pub struct CourseMembershipDetails {
     #[serde(rename(deserialize = "courseId"))]
     pub short_name: String,
     pub display_name: String,
-    pub term: CourseTerm,
+    pub term: Option<CourseTerm>,
 }
 
 #[derive(Deserialize)]
@@ -315,10 +315,11 @@ impl BbScrapeClient {
             .filter(|course_entry| {
                 self.all_courses || {
                     let now = OffsetDateTime::now_utc();
-                    if let (Some(start), Some(end)) = (
-                        course_entry.course.term.start_date,
-                        course_entry.course.term.end_date,
-                    ) {
+                    if let Some(CourseTerm {
+                        start_date: Some(start),
+                        end_date: Some(end),
+                    }) = course_entry.course.term
+                    {
                         start <= now && now <= end
                     } else {
                         false
