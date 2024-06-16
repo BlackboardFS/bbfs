@@ -62,9 +62,10 @@ impl HeadlessCookieMonster {
            .await?)
     }
 
-    async fn complete_auth<DuoF: Fn(&str)>(
+    async fn complete_auth<DuoF: Fn(&str), PasscodeF: Fn() -> String>(
         client: &Client,
         handle_duo_code: DuoF,
+        get_passcode: PasscodeF,
     ) -> anyhow::Result<()> {
         let duo_task = Self::wait_for_duo_code(client).fuse();
         let passcode_task = Self::wait_for_passcode(client).fuse();
@@ -83,11 +84,7 @@ impl HeadlessCookieMonster {
                 Self::wait_for_completion(client).await
             }
             passcode_element = passcode_task => {
-                print!("Passcode: ");
-                let _ = stdout().flush();
-                let mut passcode = "".into();
-                stdin().read_line(&mut passcode).expect("expected passcode");
-
+                let passcode = get_passcode();
                 passcode_element?.send_keys(&passcode).await?;
 
                 let verify_button = client
@@ -122,10 +119,11 @@ impl HeadlessCookieMonster {
         }
     }
 
-    fn eat_user_cookies<DuoF: Fn(&str)>(
+    fn eat_user_cookies<DuoF: Fn(&str), PasscodeF: Fn() -> String>(
         username: &str,
         password: &str,
         handle_duo_code: DuoF,
+        get_passcode: PasscodeF,
     ) -> anyhow::Result<String> {
         // Ensure that webdriver is installed
         let strategy = choose_base_strategy().unwrap();
@@ -200,7 +198,8 @@ impl HeadlessCookieMonster {
                 password_field.send_keys(password).await?;
                 submit_button.click().await?;
 
-                match Self::complete_auth(&c, handle_duo_code).await {
+                match Self::complete_auth(&c, handle_duo_code,
+                                          get_passcode).await {
                     Ok(()) => {}
                     Err(err) => {
                         c.close().await?;
@@ -242,8 +241,19 @@ impl CookieMonster for HeadlessCookieMonster {
         let _ = stdout().flush();
         let password = read_password().expect("expected password");
 
-        Self::eat_user_cookies(&username, &password, |duo_code| {
+        let handle_duo_code = |duo_code: &str| {
             println!("Your duo code is {duo_code}")
-        })
+        };
+
+        let get_passcode = || {
+            print!("Passcode: ");
+            let _ = stdout().flush();
+            let mut passcode = "".into();
+            stdin().read_line(&mut passcode).expect("expected passcode");
+            passcode.trim().to_string()
+        };
+
+        Self::eat_user_cookies(&username, &password,
+                               handle_duo_code, get_passcode)
     }
 }
