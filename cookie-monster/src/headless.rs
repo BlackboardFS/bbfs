@@ -52,6 +52,16 @@ impl HeadlessCookieMonster {
             .await?)
     }
 
+    async fn wait_for_passcode_error_alert(
+        client: &Client
+    ) -> anyhow::Result<Element> {
+        Ok(client
+           .wait()
+           .forever()
+           .for_element(Locator::Css("div.passcode-error-message"))
+           .await?)
+    }
+
     async fn complete_auth<DuoF: Fn(&str)>(
         client: &Client,
         handle_duo_code: DuoF,
@@ -89,8 +99,10 @@ impl HeadlessCookieMonster {
                 verify_button.click().await?;
 
                 let trust_task = Self::wait_for_trust(client).fuse();
+                let passcode_failure_task =
+                    Self::wait_for_passcode_error_alert(client).fuse();
 
-                pin_mut!(trust_task);
+                pin_mut!(trust_task, passcode_failure_task);
 
                 select! {
                     trust_button = trust_task => {
@@ -98,9 +110,9 @@ impl HeadlessCookieMonster {
                         Self::wait_for_completion(client).await
                     }
                     _ = completion_task => Ok(()),
-                    // have not confirmed that the failure task will detect it
-                    // correctly. locked myself out of blackboard lol
-                    _ = failure_task => Err(anyhow!("Incorrect passcode"))
+                    _ = passcode_failure_task => {
+                        Err(anyhow!("Incorrect passcode"))
+                    }
                 }
             }
             _ = completion_task => Ok(()),
