@@ -30,9 +30,16 @@ struct BbfsCli {
     mount_point: PathBuf,
 }
 
+fn exit_error<E: std::fmt::Display>(e: E) -> ! {
+    eprintln!("Error: {e}");
+    std::process::exit(1);
+}
+
 impl BbfsCli {
     fn normalized_mount_point(&self) -> PathBuf {
-        self.mount_point.canonicalize().unwrap()
+        self.mount_point
+            .canonicalize()
+            .unwrap_or_else(|e| exit_error(e))
     }
 }
 
